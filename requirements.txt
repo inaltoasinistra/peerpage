@@ -1,0 +1,5 @@
+libtorrent==2.0.11
+aiohttp
+coverage
+nostr-sdk
+tomli; python_version < "3.11"

@@ -1,0 +1,79 @@
+<form class="add-site" method="post" action="/@/add">
+  <input type="text" name="address" placeholder="peerpage:// or naddr1…" required>
+  <button type="submit">Add site</button>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>Site</th>
+      <th>Version</th>
+      <th>State</th>
+      <th>Peers</th>
+      <th>Upload</th>
+      <th>Download</th>
+      <th>Disk</th>
+      <th>Exclusive</th>
+      <th>Total</th>
+    </tr>
+  </thead>
+  <tbody id="sites-body">
+$rows
+  </tbody>
+</table>
+
+<script>
+function deleteSite(id) {
+  if (!confirm('Delete ' + id + '?')) return;
+  fetch('/@/api/delete/' + id, {method: 'POST'})
+    .then(function(r) { if (r.ok) location.reload(); });
+}
+function fmtRate(bps) { return (bps / 1024).toFixed(1) + ' KB/s'; }
+function fmtMB(b)     { return (b / 1048576).toFixed(1) + ' MB'; }
+function mkRow(s, isLatest) {
+  var nameCell = isLatest
+    ? '<a href="/' + s.url_identifier + '/">' + s.identifier + '</a>'
+      + (s.state !== 'downloading_metadata'
+        ? ' <a href="/@/files/' + s.url_identifier + '" class="files-link dim">files</a>'
+        : '')
+      + ' <a href="#" class="del-link dim" onclick="deleteSite(\'' + s.url_identifier + '\');return false;">delete</a>'
+    : s.identifier;
+  function cell(val, text) {
+    return '<td' + (val === 0 ? ' class="dim"' : '') + '>' + text + '</td>';
+  }
+  function cellMB(val, text) {
+    return '<td' + (val < 0.1 * 1048576 ? ' class="dim"' : '') + '>' + text + '</td>';
+  }
+  return '<tr>'
+    + '<td>' + nameCell + '</td>'
+    + '<td>' + s.version + '</td>'
+    + '<td>' + s.state + '</td>'
+    + cell(s.num_peers, s.num_peers)
+    + cell(s.upload_rate, fmtRate(s.upload_rate))
+    + cell(s.download_rate, fmtRate(s.download_rate))
+    + cellMB(s.disk_bytes, fmtMB(s.disk_bytes))
+    + cellMB(s.exclusive_bytes, fmtMB(s.exclusive_bytes))
+    + cellMB(s.site_total_bytes, fmtMB(s.site_total_bytes))
+    + '</tr>';
+}
+setInterval(function() {
+  fetch('/@/api/sites')
+    .then(function(r) { return r.json(); })
+    .then(function(sites) {
+      if (!sites.length) {
+        document.getElementById('sites-body').innerHTML =
+          '<tr><td colspan="9" class="dim">No active sites.</td></tr>';
+        return;
+      }
+      var latest = {};
+      sites.forEach(function(s) {
+        if (!(s.url_identifier in latest) || s.version > latest[s.url_identifier])
+          latest[s.url_identifier] = s.version;
+      });
+      document.getElementById('sites-body').innerHTML =
+        sites.map(function(s) {
+          return mkRow(s, s.version === latest[s.url_identifier]);
+        }).join('');
+    });
+}, 5000);
+</script>

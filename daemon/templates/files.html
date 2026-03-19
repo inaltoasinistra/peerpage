@@ -1,0 +1,292 @@
+<p class="dim"><a href="/@/">← Dashboard</a></p>
+
+<div class="files-header">
+  <strong id="sel-files">0</strong> files selected &ndash;
+  <strong id="sel-size">0 B</strong>
+  <span class="dim">of <span id="total-size">0 B</span></span>
+  &nbsp;
+  <a href="#" id="btn-all">all</a> /
+  <a href="#" id="btn-none">none</a> /
+  <a href="#" id="btn-files">root files</a> /
+  <a href="#" id="btn-reset">reset selection</a>
+  <span id="save-status" class="dim save-status"></span>
+</div>
+
+<div id="file-tree" class="file-tree"></div>
+
+<script>
+(function () {
+  var IDENTIFIER = '$identifier';
+  var FILES = $files_json;
+  var TOTAL_FILES = $total_files;
+
+  /* ── state: file index → 0 (skip) | 1 (download) ─────── */
+  var state = {};
+  FILES.forEach(function (f) { state[f.index] = f.priority > 0 ? 1 : 0; });
+
+  /* ── tree construction ──────────────────────────────────── */
+  function buildTree(files) {
+    var root = { name: '', path: '', children: {}, files: [], size: 0 };
+    files.forEach(function (f) {
+      var parts = f.path.split('/');
+      var node = root;
+      for (var i = 0; i < parts.length - 1; i++) {
+        var part = parts[i];
+        if (!node.children[part]) {
+          node.children[part] = {
+            name: part,
+            path: parts.slice(0, i + 1).join('/'),
+            children: {}, files: [], size: 0
+          };
+        }
+        node = node.children[part];
+      }
+      f.name = parts[parts.length - 1];
+      node.files.push(f);
+    });
+    calcSizes(root);
+    return root;
+  }
+
+  function calcSizes(n) {
+    n.size = 0;
+    Object.values(n.children).forEach(function (c) { calcSizes(c); n.size += c.size; });
+    n.files.forEach(function (f) { n.size += f.size; });
+  }
+
+  function countFiles(n) {
+    var c = n.files.length;
+    Object.values(n.children).forEach(function (ch) { c += countFiles(ch); });
+    return c;
+  }
+
+  function collectIndices(n) {
+    var r = [];
+    n.files.forEach(function (f) { r.push(f.index); });
+    Object.values(n.children).forEach(function (c) { r = r.concat(collectIndices(c)); });
+    return r;
+  }
+
+  /* ── formatting ─────────────────────────────────────────── */
+  function fmtSize(n) {
+    if (n < 1024)       return n + ' B';
+    if (n < 1048576)    return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+    return (n / 1073741824).toFixed(2) + ' GB';
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /* ── render ─────────────────────────────────────────────── */
+  var totalSize = FILES.reduce(function (s, f) { return s + f.size; }, 0);
+  /* Auto-expand directories that represent ≥5 % of the torrent
+     or at least 1 MB — everything smaller defaults to collapsed. */
+  var EXPAND_THRESHOLD = Math.max(totalSize * 0.05, 1048576);
+
+  function dirCheckState(n) {
+    var idx = collectIndices(n);
+    if (!idx.length) return 'none';
+    var on = idx.filter(function (i) { return state[i]; }).length;
+    if (on === 0)          return 'none';
+    if (on === idx.length) return 'all';
+    return 'partial';
+  }
+
+  function renderNode(n, depth) {
+    var html = '';
+    var dirs  = Object.values(n.children).sort(function (a, b) { return b.size - a.size; });
+    var files = n.files.slice().sort(function (a, b) { return b.size - a.size; });
+    dirs.forEach(function (d)  { html += renderDir(d, depth); });
+    files.forEach(function (f) { html += renderFile(f, depth); });
+    return html;
+  }
+
+  function renderDir(n, depth) {
+    var cs       = dirCheckState(n);
+    var expanded = n.size >= EXPAND_THRESHOLD;
+    var pad      = 'padding-left:' + (depth * 18) + 'px';
+    var fc       = countFiles(n);
+    var summary  = fc + ' file' + (fc !== 1 ? 's' : '') + ', ' + fmtSize(n.size);
+    var chkAttrs = 'class="dir-check" data-dir="' + esc(n.path) + '"'
+      + (cs === 'all'     ? ' checked'      : '')
+      + (cs === 'partial' ? ' data-ind="1"' : '');
+    return '<div class="tree-dir" data-path="' + esc(n.path) + '" data-open="' + (expanded ? 1 : 0) + '">'
+      + '<div class="tree-row" style="' + pad + '">'
+      + '<input type="checkbox" ' + chkAttrs + '>'
+      + '<span class="tree-tog">' + (expanded ? '&#9660;' : '&#9654;') + '</span>'
+      + '<span class="tree-name dir-name">' + esc(n.name) + '/</span>'
+      + '<span class="tree-sz dim">' + (expanded ? fmtSize(n.size) : summary) + '</span>'
+      + '</div>'
+      + '<div class="tree-kids"' + (expanded ? '' : ' style="display:none"') + '>'
+      + renderNode(n, depth + 1)
+      + '</div>'
+      + '</div>';
+  }
+
+  function renderFile(f, depth) {
+    var pad = 'padding-left:' + (depth * 18) + 'px';
+    return '<div class="tree-row" style="' + pad + '">'
+      + '<input type="checkbox" class="file-check" data-idx="' + f.index + '"'
+      + (state[f.index] ? ' checked' : '') + '>'
+      + '<span class="tree-name">' + esc(f.name) + '</span>'
+      + '<span class="tree-sz dim">' + fmtSize(f.size) + '</span>'
+      + '</div>';
+  }
+
+  /* ── summary bar ────────────────────────────────────────── */
+  function updateSummary() {
+    var fc = 0, sz = 0;
+    FILES.forEach(function (f) { if (state[f.index]) { fc++; sz += f.size; } });
+    document.getElementById('sel-files').textContent = fc;
+    document.getElementById('sel-size').textContent  = fmtSize(sz);
+    document.getElementById('total-size').textContent = fmtSize(totalSize);
+  }
+
+  /* ── save (debounced 300 ms) ────────────────────────────── */
+  var saveTimer = null;
+  var statusEl  = document.getElementById('save-status');
+
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    statusEl.textContent = 'saving\u2026';
+    saveTimer = setTimeout(function () {
+      var prios = new Array(TOTAL_FILES).fill(0);
+      FILES.forEach(function (f) { prios[f.index] = state[f.index] || 0; });
+      fetch('/@/api/priority/' + IDENTIFIER, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priorities: prios }),
+      }).then(function () {
+        statusEl.textContent = 'saved';
+        setTimeout(function () { statusEl.textContent = ''; }, 2000);
+      }).catch(function () {
+        statusEl.textContent = 'save failed';
+      });
+    }, 300);
+  }
+
+  /* ── refresh dir checkboxes after file state changes ────── */
+  function refreshDirChecks() {
+    document.querySelectorAll('input.dir-check').forEach(function (cb) {
+      var dirEl  = cb.closest('.tree-dir');
+      if (!dirEl) return;
+      var fcs    = dirEl.querySelectorAll('input.file-check');
+      var total  = fcs.length, on = 0;
+      fcs.forEach(function (fc) { if (fc.checked) on++; });
+      if (on === 0)      { cb.checked = false; cb.indeterminate = false; }
+      else if (on === total) { cb.checked = true;  cb.indeterminate = false; }
+      else                   { cb.checked = false; cb.indeterminate = true;  }
+    });
+  }
+
+  /* ── event delegation ───────────────────────────────────── */
+  var treeEl = document.getElementById('file-tree');
+
+  treeEl.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.classList.contains('file-check')) {
+      state[parseInt(t.dataset.idx, 10)] = t.checked ? 1 : 0;
+      refreshDirChecks();
+      updateSummary();
+      scheduleSave();
+    } else if (t.classList.contains('dir-check')) {
+      var val    = t.checked ? 1 : 0;
+      var dirEl  = t.closest('.tree-dir');
+      dirEl.querySelectorAll('input.file-check').forEach(function (fc) {
+        state[parseInt(fc.dataset.idx, 10)] = val;
+        fc.checked = (val === 1);
+      });
+      t.indeterminate = false;
+      refreshDirChecks();
+      updateSummary();
+      scheduleSave();
+    }
+  });
+
+  treeEl.addEventListener('click', function (e) {
+    if (!e.target.classList.contains('tree-tog')) return;
+    var dirEl   = e.target.closest('.tree-dir');
+    var kids    = dirEl.querySelector('.tree-kids');
+    var szEl    = dirEl.querySelector('.tree-sz');
+    var n       = NODES[dirEl.dataset.path];
+    var opening = dirEl.dataset.open !== '1';
+    if (opening) {
+      kids.style.display  = '';
+      dirEl.dataset.open  = '1';
+      e.target.innerHTML  = '&#9660;';
+      if (n) szEl.textContent = fmtSize(n.size);
+    } else {
+      kids.style.display  = 'none';
+      dirEl.dataset.open  = '0';
+      e.target.innerHTML  = '&#9654;';
+      if (n) {
+        var fc = countFiles(n);
+        szEl.textContent = fc + ' file' + (fc !== 1 ? 's' : '') + ', ' + fmtSize(n.size);
+      }
+    }
+  });
+
+  /* ── initialise ─────────────────────────────────────────── */
+  var TREE  = buildTree(FILES);
+
+  /* Flat index of nodes by path, used by the toggle handler. */
+  var NODES = {};
+  function indexNodes(n) {
+    if (n.path) NODES[n.path] = n;
+    Object.values(n.children).forEach(indexNodes);
+  }
+  indexNodes(TREE);
+
+  /* Skip the top-level 'site/' directory — render its contents directly. */
+  var displayRoot = TREE.children['site'] || TREE;
+  treeEl.innerHTML = renderNode(displayRoot, 0);
+
+  /* Indeterminate state cannot be set via HTML attribute. */
+  document.querySelectorAll('[data-ind="1"]').forEach(function (cb) {
+    cb.indeterminate = true;
+    cb.checked = false;
+  });
+
+  updateSummary();
+
+  /* ── select-all / select-none ───────────────────────────── */
+  function setAll(val) {
+    FILES.forEach(function (f) { state[f.index] = val; });
+    document.querySelectorAll('input.file-check').forEach(function (cb) {
+      cb.checked = (val === 1);
+    });
+    refreshDirChecks();
+    updateSummary();
+    scheduleSave();
+  }
+  document.getElementById('btn-all').addEventListener('click', function (e) {
+    e.preventDefault(); setAll(1);
+  });
+  document.getElementById('btn-none').addEventListener('click', function (e) {
+    e.preventDefault(); setAll(0);
+  });
+  document.getElementById('btn-files').addEventListener('click', function (e) {
+    e.preventDefault();
+    FILES.forEach(function (f) { state[f.index] = 0; });
+    displayRoot.files.forEach(function (f) { state[f.index] = 1; });
+    document.querySelectorAll('input.file-check').forEach(function (cb) {
+      cb.checked = (state[parseInt(cb.dataset.idx, 10)] === 1);
+    });
+    refreshDirChecks();
+    updateSummary();
+    scheduleSave();
+  });
+  document.getElementById('btn-reset').addEventListener('click', function (e) {
+    e.preventDefault();
+    statusEl.textContent = 'resetting\u2026';
+    fetch('/@/api/reset/' + IDENTIFIER, { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function () { location.reload(); })
+      .catch(function () { statusEl.textContent = 'reset failed'; });
+  });
+})();
+</script>

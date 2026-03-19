@@ -1,0 +1,161 @@
+body {
+  font-family: sans-serif;
+  max-width: 860px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #222;
+}
+
+nav {
+  margin-bottom: 1.5rem;
+}
+
+nav a {
+  margin-right: 1rem;
+  text-decoration: none;
+  color: #0074d9;
+}
+
+h1 {
+  font-size: 1.3rem;
+  margin-top: 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: .9rem;
+}
+
+th, td {
+  text-align: left;
+  padding: .35rem .6rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+th:nth-child(n+2),
+td:nth-child(n+2) {
+  white-space: nowrap;
+}
+
+th {
+  background: #f6f6f6;
+  font-weight: 600;
+}
+
+code {
+  background: #f0f0f0;
+  padding: .1rem .3rem;
+  border-radius: 3px;
+}
+
+.dim {
+  color: #888;
+}
+
+.dir-listing a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.dir-listing a:hover {
+  color: #0074d9;
+}
+
+.dir-listing .size {
+  width: 6rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ── files link in dashboard ──────────────────────────────── */
+
+.files-link {
+  font-size: .75rem;
+  margin-left: .4rem;
+  text-decoration: none;
+}
+
+.files-link:hover { color: #0074d9; }
+
+/* ── file selector page ───────────────────────────────────── */
+
+.files-header {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  padding: .4rem 0 .6rem;
+  margin-bottom: .8rem;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: .9rem;
+}
+
+.save-status {
+  margin-left: auto;
+  font-size: .8rem;
+}
+
+.file-tree {
+  font-size: .9rem;
+  font-family: monospace;
+  line-height: 1.6;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.tree-row:hover { background: #f6f6f6; }
+
+.tree-tog {
+  cursor: pointer;
+  user-select: none;
+  font-size: .75rem;
+  width: 1em;
+  flex-shrink: 0;
+  color: #666;
+}
+
+.tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dir-name { font-weight: 600; }
+
+.tree-sz {
+  min-width: 7rem;
+  text-align: right;
+  font-size: .8rem;
+}
+
+/* ── add-site form ────────────────────────────────────────── */
+
+.add-site {
+  margin-bottom: 1.5rem;
+  display: flex;
+  gap: .5rem;
+}
+
+.add-site input {
+  flex: 1;
+  padding: .35rem .6rem;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-size: .9rem;
+}
+
+.add-site button {
+  padding: .35rem .8rem;
+  background: #0074d9;
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  font-size: .9rem;
+  cursor: pointer;
+}

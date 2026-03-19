@@ -1,0 +1,15 @@
+<form method="post" action="/@/config" style="max-width:400px;">
+  <table>
+    <tr>
+      <td><label for="max_site_mb">Default max site size</label></td>
+      <td>
+        <input type="number" id="max_site_mb" name="max_site_mb"
+               value="$max_site_mb" min="1" style="width:5rem"> MB
+      </td>
+    </tr>
+  </table>
+  <p style="margin-top:1rem;">
+    <button type="submit">Save</button>
+    <span class="dim" style="margin-left:.5rem;">$saved_msg</span>
+  </p>
+</form>
