@@ -205,6 +205,29 @@ class TestSyncSiteSeeding(unittest.TestCase):
         session.stop_site.assert_called_once_with(orphan_dir)
         self.assertTrue(any('orphaned' in line for line in log.output))
 
+    def test_does_not_delete_orphan_if_torrent_appears_before_rmtree(self) -> None:
+        """TOCTOU: if site.torrent is written between classify and the re-check, keep the dir.
+
+        Simulates the race by patching _classify_versions to return empty lists
+        (as if it ran before site.torrent was written), while site.torrent is
+        already on disk when the re-check runs.
+        """
+        orphan_dir = os.path.join(self.data_dir, 'sites', FAKE_NPUB, 'site_a', '1')
+        os.makedirs(orphan_dir)
+        # Write site.torrent so the re-check inside _sync_site finds it.
+        with open(os.path.join(orphan_dir, 'site.torrent'), 'wb') as f:
+            f.write(b'fake')
+        session = MagicMock()
+        watcher = Watcher(self.sites_dir, self.data_dir, session)
+        site_dir = self._site_dir(FAKE_NPUB, 'site_a')
+        # Patch _classify_versions to simulate the race: it returns empty lists
+        # as if it ran before site.torrent was written.
+        with patch('daemon.watcher._classify_versions', return_value=([], [])):
+            watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)
+        # The re-check must have found site.torrent and skipped deletion.
+        self.assertTrue(os.path.isdir(orphan_dir))
+        session.stop_site.assert_not_called()
+
     def test_purges_over_cap_complete_versions(self) -> None:
         """When there are more than MAX_VERSIONS complete versions, oldest are purged."""
         for ver in range(1, MAX_VERSIONS + 2):

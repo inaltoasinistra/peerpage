@@ -55,11 +55,16 @@ class Watcher:
         complete, incomplete = _classify_versions(site_dir)
 
         # Remove numeric dirs with no recognised marker (orphaned by a crash etc.)
+        # Re-check the markers just before deleting: the publisher may have written
+        # site.torrent between _classify_versions and this loop (TOCTOU).
         known = set(complete) | set(incomplete)
         for ver in list_version_dirs(site_dir):
             if ver not in known:
                 ver_dir = os.path.join(site_dir, str(ver))
                 if not os.path.isfile(os.path.join(ver_dir, 'rejected')):
+                    if (os.path.isfile(os.path.join(ver_dir, 'site.torrent')) or
+                            os.path.isfile(os.path.join(ver_dir, 'event.json'))):
+                        continue  # marker appeared since classify; not orphaned
                     logger.info('%s: removing orphaned version dir v%d', site_name, ver)
                     self._session.stop_site(ver_dir)
                     try:

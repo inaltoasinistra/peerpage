@@ -315,8 +315,13 @@ async def _publish(daemon: DaemonInfo, site_name: str) -> tuple[int, str] | None
     if event is None:
         return None
 
-    # Write event.json so the local daemon recognises this version as its own
-    with atomic_open(os.path.join(site.data_path, str(site.version), 'event.json')) as f:
+    # Write event.json so the local daemon recognises this version as its own.
+    # The daemon may have deleted the version dir between site.create() and here
+    # (race: it saw the dir without site.torrent yet and classified it as orphaned).
+    # Re-create it if necessary; the daemon will re-download if site.torrent is gone.
+    version_dir = os.path.join(site.data_path, str(site.version))
+    os.makedirs(version_dir, exist_ok=True)
+    with atomic_open(os.path.join(version_dir, 'event.json')) as f:
         json.dump(event, f, indent=2)
 
     address = nostr.site_address(site_name)
