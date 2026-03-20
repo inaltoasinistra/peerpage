@@ -72,13 +72,26 @@ class Site:
 
     @staticmethod
     def _add_files(share_version_path: str, share_base: str) -> lt.file_storage:
+        """Add files to a file_storage in BEP 52 DFS lexicographic order.
+
+        BEP 52 requires the v1 file list to match the DFS traversal of the v2
+        file tree, where entries at each directory level are sorted by name and
+        directories are not segregated from files.  os.walk would place all
+        files at a level before descending into subdirectories, breaking
+        alphabetical interleaving of files and directory names.
+        """
         storage = lt.file_storage()
-        for root, dirs, files in os.walk(share_version_path):
-            dirs.sort()
-            for name in sorted(files):
-                full_path = os.path.join(root, name)
-                rel_path = os.path.relpath(full_path, share_base)
-                storage.add_file(rel_path, os.path.getsize(full_path))
+
+        def _recurse(dir_path: str) -> None:
+            for name in sorted(os.listdir(dir_path)):
+                full_path = os.path.join(dir_path, name)
+                if os.path.isdir(full_path):
+                    _recurse(full_path)
+                else:
+                    rel_path = os.path.relpath(full_path, share_base)
+                    storage.add_file(rel_path, os.path.getsize(full_path))
+
+        _recurse(share_version_path)
         return storage
 
     def _add_trackers(self) -> None:

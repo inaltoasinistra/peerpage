@@ -17,7 +17,9 @@ def _make_site(tmp: str, name: str, files: dict[str, str]) -> Site:
     src = os.path.join(sites_dir, name)
     os.makedirs(src, exist_ok=True)
     for fname, content in files.items():
-        with open(os.path.join(src, fname), 'w') as f:
+        fpath = os.path.join(src, fname)
+        os.makedirs(os.path.dirname(fpath), exist_ok=True)
+        with open(fpath, 'w') as f:
             f.write(content)
     s = Site(name, sites_dir=sites_dir, data_dir=data_dir, npub=FAKE_NPUB)
     s.create()
@@ -304,6 +306,51 @@ class TestComputeV2(unittest.TestCase):
         # empty file in subdir: length=0, no pieces root
         self.assertIn(b'empty.txt', file_tree[b'sub'])
         self.assertEqual(file_tree[b'sub'][b'empty.txt'][b''], {b'length': 0})
+
+
+class TestTorrentWithSubdirectories(unittest.TestCase):
+    """End-to-end _build_torrent tests for mixed flat/subdirectory file layouts.
+
+    BEP 52 requires the v1 file list to be in DFS lexicographic order where
+    files and directory names at the same level are sorted together.  When a
+    flat file sorts after a subdirectory name (e.g. 'style.css' > 'assets/'),
+    the subdirectory must appear first — but os.walk would put the flat file
+    first.  These tests catch that ordering bug.
+    """
+
+    def test_flat_file_after_subdir_alphabetically(self) -> None:
+        """style.css sorts after assets/ — assets/hero must come first in v1."""
+        with tempfile.TemporaryDirectory() as tmp:
+            # 5 KB flat file + larger file in subdir whose name sorts before it
+            s = _make_site(tmp, 'mysite', {
+                'style.css': 'x' * 5120,
+                'assets/hero.jpg': 'y' * 590,
+            })
+        # If the v1/v2 ordering is wrong, lt.torrent_info raises RuntimeError.
+        self.assertIsNotNone(s.torrent_path)
+        self.assertIsNotNone(s.magnet_uri)
+
+    def test_flat_file_before_subdir_alphabetically(self) -> None:
+        """a.txt sorts before sub/ — this was already working; must stay working."""
+        with tempfile.TemporaryDirectory() as tmp:
+            s = _make_site(tmp, 'mysite', {
+                'a.txt': 'flat content',
+                'sub/b.txt': 'nested content',
+            })
+        self.assertIsNotNone(s.torrent_path)
+        self.assertIsNotNone(s.magnet_uri)
+
+    def test_multiple_subdirs_interleaved_with_flat(self) -> None:
+        """Multiple subdirs whose names straddle a flat file name."""
+        with tempfile.TemporaryDirectory() as tmp:
+            s = _make_site(tmp, 'mysite', {
+                'index.html': '<html/>',
+                'docs/readme.txt': 'readme',
+                'style.css': 'body{}',
+                'images/logo.png': 'PNG' * 100,
+            })
+        self.assertIsNotNone(s.torrent_path)
+        self.assertIsNotNone(s.magnet_uri)
 
 
 class TestCreateEdgeCases(unittest.TestCase):
