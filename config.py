@@ -37,13 +37,19 @@ class NostrConfig:
 
 
 DEFAULT_MAX_SITE_MB = 100
+DEFAULT_HTTP_HOST = '127.0.0.1'
+DEFAULT_HTTP_PORT = 8008
 
 
 class Config:
 
-    def __init__(self, nostr: NostrConfig, max_site_mb: int = DEFAULT_MAX_SITE_MB) -> None:
+    def __init__(self, nostr: NostrConfig, max_site_mb: int = DEFAULT_MAX_SITE_MB,
+                 http_host: str = DEFAULT_HTTP_HOST,
+                 http_port: int = DEFAULT_HTTP_PORT) -> None:
         self.nostr = nostr
         self.max_site_mb = max_site_mb
+        self.http_host = http_host
+        self.http_port = http_port
 
 
 def _write(path: str, config: Config) -> None:
@@ -52,6 +58,8 @@ def _write(path: str, config: Config) -> None:
     followed_items = '\n'.join(f'    "{f}",' for f in config.nostr.followed)
     content = (
         f'max_site_mb = {config.max_site_mb}\n'
+        f'http_host = "{config.http_host}"\n'
+        f'http_port = {config.http_port}\n'
         f'\n'
         f'[nostr]\n'
         f'private_key = "{config.nostr.private_key}"\n'
@@ -89,6 +97,8 @@ def load(path: str = CONFIG_PATH) -> Config:
             followed=nostr_data.get('followed', []),
         ),
         max_site_mb=int(data.get('max_site_mb', DEFAULT_MAX_SITE_MB)),
+        http_host=str(data.get('http_host', DEFAULT_HTTP_HOST)),
+        http_port=int(data.get('http_port', DEFAULT_HTTP_PORT)),
     )
     if nostr_data.get('public_key', '') != derived_npub:
         _write(path, cfg)

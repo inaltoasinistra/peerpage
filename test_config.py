@@ -3,7 +3,8 @@ import tempfile
 import unittest
 
 import config as cfg_module
-from config import Config, NostrConfig, DEFAULT_RELAYS, _write, load, save
+from config import (Config, NostrConfig, DEFAULT_RELAYS, DEFAULT_HTTP_HOST,
+                    DEFAULT_HTTP_PORT, _write, load, save)
 
 
 class TestWrite(unittest.TestCase):
@@ -171,6 +172,59 @@ class TestFollowed(unittest.TestCase):
             save(cfg, path)
             loaded = load(path)
         self.assertIn(npub, loaded.nostr.followed)
+
+
+class TestBindAddress(unittest.TestCase):
+
+    def test_defaults(self) -> None:
+        cfg = Config(nostr=NostrConfig(private_key='nsec1x', relays=[]))
+        self.assertEqual(cfg.http_host, DEFAULT_HTTP_HOST)
+        self.assertEqual(cfg.http_port, DEFAULT_HTTP_PORT)
+
+    def test_write_and_load_preserves_bind_address(self) -> None:
+        from nostr_sdk import Keys
+        keys = Keys.generate()
+        nsec = keys.secret_key().to_bech32()
+        cfg = Config(nostr=NostrConfig(private_key=nsec, relays=[]),
+                     http_host='0.0.0.0', http_port=9090)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'config.toml')
+            _write(path, cfg)
+            loaded = load(path)
+        self.assertEqual(loaded.http_host, '0.0.0.0')
+        self.assertEqual(loaded.http_port, 9090)
+
+    def test_load_defaults_when_absent(self) -> None:
+        from nostr_sdk import Keys
+        keys = Keys.generate()
+        nsec = keys.secret_key().to_bech32()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'config.toml')
+            with open(path, 'w') as f:
+                f.write(f'[nostr]\nprivate_key = "{nsec}"\nrelays = []\n')
+            with self.assertLogs('config', level='INFO'):
+                cfg = load(path)
+        self.assertEqual(cfg.http_host, DEFAULT_HTTP_HOST)
+        self.assertEqual(cfg.http_port, DEFAULT_HTTP_PORT)
+
+    def test_write_includes_fields_in_toml(self) -> None:
+        import sys
+        if sys.version_info >= (3, 11):
+            import tomllib
+        else:
+            import tomli as tomllib
+        from nostr_sdk import Keys
+        keys = Keys.generate()
+        nsec = keys.secret_key().to_bech32()
+        cfg = Config(nostr=NostrConfig(private_key=nsec, relays=[]),
+                     http_host='192.168.1.1', http_port=1234)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'config.toml')
+            _write(path, cfg)
+            with open(path, 'rb') as f:
+                data = tomllib.load(f)
+        self.assertEqual(data['http_host'], '192.168.1.1')
+        self.assertEqual(data['http_port'], 1234)
 
 
 if __name__ == '__main__':

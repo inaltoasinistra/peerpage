@@ -184,6 +184,10 @@ Only one daemon instance is allowed at a time, enforced via `fcntl.flock` on `PE
 
 `tui.py` is a standalone ncurses client. It polls `PEERPAGE_URL/@/api/sites` every second and redraws a table showing per-site rates, total disk usage (`DISK`), exclusive disk usage (`EXCL` — files not hard-linked to other versions), and peer count. Press `q` to quit.
 
+## Format and compatibility
+
+Do not make changes that alter wire-level formats (torrent file structure, bencode schema, on-disk layout) or break backward compatibility with existing stored data without first asking the user for explicit permission. When in doubt, ask before implementing.
+
 ## Testing and coverage
 
 After every feature or change, run `./coverage.sh` and check the report. Coverage must stay at 100%. Entry-point scripts are excluded via `.coveragerc`.

@@ -4,7 +4,7 @@ from fileutil import atomic_open
 
 
 def torrent_manifest(torrent_path: str) -> dict[str, bytes]:
-    """Return {rel_path: sha256_root} for each file in a v2 torrent."""
+    """Return {rel_path: sha256_root} for each file in a hybrid v2 torrent."""
     info = lt.torrent_info(torrent_path)
     files = info.files()
     manifest: dict[str, bytes] = {}

@@ -122,8 +122,7 @@ def _compute_new_version_priorities(new_info: lt.torrent_info, site_dir: str,
 def _prepopulate(new_info: lt.torrent_info, site_dir: str,
                  new_version_dir: str,
                  only_indices: set[int] | None = None) -> int:
-    """Hard-link files from any previous version dir where the SHA-256
-    Merkle root matches the new torrent.
+    """Hard-link files from any previous version dir where the SHA-256 Merkle root matches.
 
     Searches all version directories inside site_dir that have a complete
     site.torrent, newest first.  This handles the case where a file was
@@ -138,20 +137,20 @@ def _prepopulate(new_info: lt.torrent_info, site_dir: str,
     libtorrent will verify these on startup and skip downloading them.
     """
     new_files = new_info.files()
-    _ZERO_ROOT = bytes(32)
 
-    # Collect files we need to find in previous versions.
+    # Collect files we need to find in previous versions, keyed by SHA-256 Merkle root.
+    _ZERO_ROOT = bytes(32)
     needed: dict[str, bytes] = {}
     for i in range(new_files.num_files()):
         if only_indices is not None and i not in only_indices:
             continue
         try:
-            new_root = bytes.fromhex(str(new_files.root(i)))
+            root = bytes.fromhex(str(new_files.root(i)))
         except ValueError:
-            continue  # v1-only torrent or malformed root — skip
-        if new_root != _ZERO_ROOT:  # skip pad files
+            continue  # malformed root — skip
+        if root != _ZERO_ROOT:  # skip pad files (zero root)
             rel_path = new_files.file_path(i).replace('\\', '/')
-            needed[rel_path] = new_root
+            needed[rel_path] = root
 
     if not needed:
         return 0

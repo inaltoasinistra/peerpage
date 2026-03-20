@@ -15,7 +15,6 @@ from .watcher import Watcher
 SITES_DIR = os.environ.get('SITES_DIR', os.path.expanduser('~/peerpage'))
 DATA_DIR = os.environ.get('DATA_DIR', os.path.expanduser('~/.local/share/peerpage'))
 LOCK_FILE = os.environ.get('PEERPAGE_LOCK', '/tmp/peerpage.lock')
-HTTP_PORT = int(os.environ.get('HTTP_PORT', '8008'))
 
 logging.basicConfig(
     level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
@@ -59,9 +58,11 @@ async def run() -> None:
         if main_task is not None:
             main_task.cancel()
 
+    http_host = cfg.http_host
+    http_port = int(os.environ.get('HTTP_PORT', cfg.http_port))
     http = HttpServer(DATA_DIR, session, on_download=on_download, on_stop=on_stop,
                       config=cfg, config_path=cfg_module.CONFIG_PATH)
-    await http.start(port=HTTP_PORT)
+    await http.start(host=http_host, port=http_port)
     logger.info('daemon started, watching %s', SITES_DIR)
     try:
         await asyncio.gather(session.run(), watcher.run(), nostr_watcher.run())
