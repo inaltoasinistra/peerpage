@@ -67,13 +67,14 @@ def get_tag(event: dict, name: str, default: str | None = None) -> str | None:
 def initial_priorities(files: list[dict], budget_bytes: int) -> list[int]:
     """Compute initial file priorities using a greedy recursive budget algorithm.
 
-    At each directory level, all direct files are treated as a single atomic
-    group: either all are selected or all are skipped.  Subdirectories are
-    treated as individual items.  Direct-file groups and subdirectories are
-    sorted by total size ascending; items that fit the remaining budget are
-    selected in full.  Directories that exceed the budget are recursed into,
-    applying the same rule to their contents.  This continues recursively
-    until the budget is exhausted or all files have been considered.
+    At each directory level, all direct files are first tried as a single
+    atomic group (all-or-nothing).  If the group fits the remaining budget it
+    is selected in full.  If it does not fit, the files are tried individually
+    in size-ascending order so that smaller files can still be selected.
+    Subdirectories are treated as individual items; those that exceed the
+    budget are recursed into, applying the same rule to their contents.  This
+    continues recursively until the budget is exhausted or all files have been
+    considered.
 
     files: list of {index, path, size}  (same format as TorrentSession.file_list())
     budget_bytes: maximum total bytes to select
@@ -124,7 +125,12 @@ def initial_priorities(files: list[dict], budget_bytes: int) -> list[int]:
                 budget -= item['size']
             elif item['kind'] == 'dir':
                 budget = _fill(item['files'], item['prefix_len'], budget)
-            # file_group that exceeds budget: all remain 0
+            elif item['kind'] == 'file_group':
+                # Group exceeds budget: try files individually, smallest first
+                for f in sorted(item['files'], key=lambda x: x['size']):
+                    if f['size'] <= budget:
+                        priorities[f['index']] = 1
+                        budget -= f['size']
         return budget
 
     _fill(files, len(strip), budget_bytes)

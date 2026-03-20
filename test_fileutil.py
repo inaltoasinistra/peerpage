@@ -211,27 +211,27 @@ class TestInitialPriorities(unittest.TestCase):
         ]
         self.assertEqual(initial_priorities(files, 100 * MB), [1, 1, 1])
 
-    def test_flat_file_group_skipped_when_combined_size_exceeds_budget(self) -> None:
-        # All three files share site/ — they form a single atomic group.
-        # Combined size (≈80 MB) exceeds the 50 MB budget, so the whole group
-        # is skipped even though two of the files would individually fit.
+    def test_flat_file_group_selects_small_when_combined_size_exceeds_budget(self) -> None:
+        # All three files share site/ — they form one group.
+        # Combined size (≈80 MB) exceeds the 50 MB budget, so the algorithm
+        # falls back to individual selection: small files are picked, large skipped.
         files = [
             _f(0, 'site/large.mp4', 80 * MB),
             _f(1, 'site/style.css', 10 * KB),
             _f(2, 'site/app.js',    20 * KB),
         ]
         result = initial_priorities(files, 50 * MB)
-        self.assertEqual(result, [0, 0, 0])
+        self.assertEqual(result, [0, 1, 1])
 
-    def test_flat_siblings_all_skipped_when_combined_size_exceeds_budget(self) -> None:
-        # index.html and database.sql are siblings in site/ — one atomic group.
-        # Combined size (≈500 MB) exceeds the 100 MB budget → both skipped.
+    def test_flat_siblings_small_selected_when_large_exceeds_budget(self) -> None:
+        # index.html (10 KB) fits in the 100 MB budget; database.sql (500 MB) does not.
+        # When the group exceeds budget, files are tried individually → index.html selected.
         files = [
             _f(0, 'site/index.html',   10 * KB),
             _f(1, 'site/database.sql', 500 * MB),
         ]
         result = initial_priorities(files, 100 * MB)
-        self.assertEqual(result[0], 0)
+        self.assertEqual(result[0], 1)
         self.assertEqual(result[1], 0)
 
     # ---------------------------------------------------------- whole dir fits
@@ -274,15 +274,19 @@ class TestInitialPriorities(unittest.TestCase):
 
     def test_typical_static_site_recurses_into_assets(self) -> None:
         # assets/ (149 MB) exceeds the budget; the algorithm descends into it.
-        # Inside assets/, the direct-file group (style.css + app.js + hero.jpg +
-        # bg-video.mp4 ≈ 147 MB) also exceeds the budget, so the whole group is
-        # skipped.  fonts/ (2 MB) is a subdirectory and is selected independently.
+        # Inside assets/, fonts/ (2 MB) is selected as a subdir.  The direct-file
+        # group (≈147 MB) exceeds the budget, so files are tried individually:
+        # style.css, app.js, and hero.jpg each fit; only bg-video.mp4 is skipped.
         #
         # Budget: 100 MB
-        #   index.html (10 KB)        file_group → selected  (≈99.99 MB left)
-        #   assets/ (149 MB) too big  recurse:
-        #     fonts/ (2 MB)           subdir     → selected  (≈97.99 MB left)
-        #     file_group (≈147 MB)    > budget   → all skipped
+        #   index.html (10 KB)         file_group → selected  (≈99.99 MB left)
+        #   assets/ (149 MB) too big   recurse:
+        #     fonts/ (2 MB)            subdir     → selected  (≈97.99 MB left)
+        #     file_group (≈147 MB) > budget → individual fallback:
+        #       style.css (50 KB)  → selected  (≈97.94 MB left)
+        #       app.js    (200 KB) → selected  (≈97.74 MB left)
+        #       hero.jpg  (30 MB)  → selected  (≈67.74 MB left)
+        #       bg-video  (117 MB) → skipped
         files = [
             _f(0, 'site/index.html',              10 * KB),
             _f(1, 'site/assets/style.css',        50 * KB),
@@ -293,17 +297,17 @@ class TestInitialPriorities(unittest.TestCase):
         ]
         result = initial_priorities(files, 100 * MB)
         self.assertEqual(result[0], 1)  # index.html
-        self.assertEqual(result[1], 0)  # assets/style.css — in oversized file_group
-        self.assertEqual(result[2], 0)  # assets/app.js    — in oversized file_group
+        self.assertEqual(result[1], 1)  # assets/style.css — individually selected
+        self.assertEqual(result[2], 1)  # assets/app.js    — individually selected
         self.assertEqual(result[3], 1)  # assets/fonts/arial.woff — subdir fits
-        self.assertEqual(result[4], 0)  # assets/hero.jpg  — in oversized file_group
-        self.assertEqual(result[5], 0)  # assets/bg-video.mp4 — in oversized file_group
+        self.assertEqual(result[4], 1)  # assets/hero.jpg  — individually selected
+        self.assertEqual(result[5], 0)  # assets/bg-video.mp4 — exceeds remaining budget
 
-    def test_supplementary_video_dir_all_skipped_when_group_too_large(self) -> None:
+    def test_supplementary_video_dir_small_selected_when_group_too_large(self) -> None:
         # After core site content fills most of the budget, videos/ (300 MB)
-        # is too large; recursing into it finds intro.mp4 and full.mp4 as
-        # siblings — their combined group (300 MB) exceeds the 2.49 MB left,
-        # so both are skipped.
+        # is too large; recursing into it finds intro.mp4 (2 MB) and full.mp4
+        # (298 MB).  Their combined group exceeds the ≈2.49 MB left, so files
+        # are tried individually: intro.mp4 fits, full.mp4 is skipped.
         #
         # Budget: 100 MB
         #   index.html    10 KB  file_group → selected
@@ -311,7 +315,9 @@ class TestInitialPriorities(unittest.TestCase):
         #   js/            2 MB  subdir     → selected
         #   images/       95 MB  subdir     → selected   (≈2.49 MB left)
         #   videos/ too big      recurse:
-        #     file_group (300 MB) > 2.49 MB  → both skipped
+        #     file_group (300 MB) > 2.49 MB → individual fallback:
+        #       intro.mp4 (2 MB)  → selected
+        #       full.mp4 (298 MB) → skipped
         files = [
             _f(0, 'site/index.html',        10 * KB),
             _f(1, 'site/css/style.css',    500 * KB),
@@ -325,8 +331,8 @@ class TestInitialPriorities(unittest.TestCase):
         self.assertEqual(result[1], 1)  # css/style.css
         self.assertEqual(result[2], 1)  # js/app.js
         self.assertEqual(result[3], 1)  # images/hero.jpg
-        self.assertEqual(result[4], 0)  # videos/intro.mp4 — sibling of full.mp4, group skipped
-        self.assertEqual(result[5], 0)  # videos/full.mp4
+        self.assertEqual(result[4], 1)  # videos/intro.mp4 — individually fits
+        self.assertEqual(result[5], 0)  # videos/full.mp4 — exceeds remaining budget
 
     def test_deep_recursion_multi_level(self) -> None:
         # docs/ → advanced/ → chapter1/ and chapter2/ each require recursion.
@@ -402,7 +408,8 @@ class TestInitialPriorities(unittest.TestCase):
     def test_no_site_prefix_with_dir_recurse(self) -> None:
         # Works correctly even without the 'site/' prefix.
         # index.html and video.mp4 are direct siblings at the root level; their
-        # combined group (≈200 MB) exceeds the 50 MB budget, so both are skipped.
+        # combined group (≈200 MB) exceeds the 50 MB budget, so files are tried
+        # individually: index.html (10 KB) fits, video.mp4 (200 MB) does not.
         # css/ (30 KB) is a subdir and is selected independently.
         files = [
             _f(0, 'index.html',    10 * KB),
@@ -411,10 +418,10 @@ class TestInitialPriorities(unittest.TestCase):
             _f(3, 'video.mp4',    200 * MB),
         ]
         result = initial_priorities(files, 50 * MB)
-        self.assertEqual(result[0], 0)  # index.html — in oversized file_group with video.mp4
+        self.assertEqual(result[0], 1)  # index.html — individually fits
         self.assertEqual(result[1], 1)  # css/main.css
         self.assertEqual(result[2], 1)  # css/theme.css
-        self.assertEqual(result[3], 0)  # video.mp4
+        self.assertEqual(result[3], 0)  # video.mp4 — exceeds budget
 
 
 if __name__ == '__main__':
