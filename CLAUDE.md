@@ -99,11 +99,11 @@ followed = [
 ]
 ```
 
-`load()` always derives `npub` from `npriv` and rewrites the file if `public_key` is missing or does not match. `save()` writes the config back to disk. Constants: `CONFIG_DIR`, `CONFIG_PATH`, `NOSTR_KIND = 30267`, `DEFAULT_RELAYS`.
+`load()` always derives `npub` from `npriv` and rewrites the file if `public_key` is missing or does not match. `save()` writes the config back to disk. Constants: `CONFIG_DIR`, `CONFIG_PATH`, `NOSTR_KIND = 34838`, `DEFAULT_RELAYS`.
 
 ### Nostr client (`nostr_client.py`)
 
-**`NostrClient`** wraps `nostr_sdk` for publishing and fetching events (kind 30267):
+**`NostrClient`** wraps `nostr_sdk` for publishing and fetching events (kind 34838):
 
 - `publish(identifier, magnet_uri, changelog, version)` — emits an addressable Nostr event with `["version", str(version)]` and `["user_agent", "Peerpage/<git-hash>"]` tags
 - `fetch_latest(pubkey_str, identifier, since=0)` — returns `{magnet, created_at, event}` or `None`
@@ -113,9 +113,9 @@ followed = [
 - `naddr_address(identifier)` — returns the NIP-19 `naddr1…` encoding for the site
 - `parse_address(address)` — `@staticmethod`; returns `(pubkey_bech32, identifier)`
 
-Event format (kind 30267):
+Event format (kind 34838):
 ```json
-{"kind": 30267, "tags": [["d","site"],["magnet","magnet:?…"],["r","wss://…"]], "content": "changelog"}
+{"kind": 34838, "tags": [["d","site"],["magnet","magnet:?…"],["r","wss://…"],["protocol","-1"],["version","…"],["user_agent","…"]], "content": "changelog"}
 ```
 
 Address formats: `peerpage://identifier.npub1…` (primary) or `naddr1…` (NIP-19).

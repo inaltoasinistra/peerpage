@@ -504,14 +504,16 @@ class TestComputeNewVersionPriorities(unittest.TestCase):
 
     def test_budget_excludes_large_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            # 1 MB budget, one file at 10 MB
-            info = self._make_info([('site/small.html', 100), ('site/huge.bin', 10 * 1024 * 1024)])
+            # 1 MB budget: small.html (100 B) is alone at root → its group fits.
+            # huge.bin lives in media/ (10 MB subdir) → recurse, file group too large.
+            info = self._make_info([('site/small.html', 100),
+                                    ('site/media/huge.bin', 10 * 1024 * 1024)])
             prios = _compute_new_version_priorities(info, tmp, max_site_mb=1)
             self.assertEqual(prios[0], 1)   # small file: included
             self.assertEqual(prios[1], 0)   # huge file: excluded
             stored = _load_file_priorities(tmp)
             self.assertEqual(stored['site/small.html'], AUTO_PICK)
-            self.assertEqual(stored['site/huge.bin'], AUTO_SKIP)
+            self.assertEqual(stored['site/media/huge.bin'], AUTO_SKIP)
 
     def test_manual_skip_overrides_budget(self) -> None:
         """A SKIP file is always excluded even if the budget would include it."""
@@ -527,13 +529,14 @@ class TestComputeNewVersionPriorities(unittest.TestCase):
     def test_manual_pick_overrides_budget(self) -> None:
         """A PICK file is always included even if the budget would exclude it."""
         with tempfile.TemporaryDirectory() as tmp:
-            _save_file_priorities(tmp, {'site/huge.bin': PICK})
-            info = self._make_info([('site/small.html', 100), ('site/huge.bin', 10 * 1024 * 1024)])
+            _save_file_priorities(tmp, {'site/media/huge.bin': PICK})
+            info = self._make_info([('site/small.html', 100),
+                                    ('site/media/huge.bin', 10 * 1024 * 1024)])
             prios = _compute_new_version_priorities(info, tmp, max_site_mb=1)
             self.assertEqual(prios[0], 1)   # small: included by budget
             self.assertEqual(prios[1], 1)   # PICK: always 1 despite exceeding budget
             stored = _load_file_priorities(tmp)
-            self.assertEqual(stored['site/huge.bin'], PICK)  # manual state preserved
+            self.assertEqual(stored['site/media/huge.bin'], PICK)  # manual state preserved
 
     def test_new_file_goes_through_budget(self) -> None:
         """A file not in file_priorities.json is treated as auto."""
@@ -598,7 +601,10 @@ class TestDownloadComputesPriorities(unittest.IsolatedAsyncioTestCase):
     async def test_uses_budget_algorithm_without_previous_state(self) -> None:
         """When no file_priorities.json exists, initial_priorities is used."""
         session = TorrentSession()
-        handle = self._make_handle([('site/small.html', 10), ('site/huge.bin', 10 * 1024 * 1024)])
+        # small.html is alone at root (file_group fits); media/huge.bin is in a
+        # subdir (group exceeds budget) so it is excluded.
+        handle = self._make_handle([('site/small.html', 10),
+                                    ('site/media/huge.bin', 10 * 1024 * 1024)])
         handle.get_file_priorities.return_value = [1, 0]
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -614,7 +620,7 @@ class TestDownloadComputesPriorities(unittest.IsolatedAsyncioTestCase):
                     await session.download('magnet:?xt=urn:btih:abc', version_dir, torrent_path,
                                            max_site_mb=1)
 
-        # huge.bin (10 MB) exceeds 1 MB budget → excluded
+        # media/huge.bin (10 MB) exceeds 1 MB budget → excluded
         handle.prioritize_files.assert_called_once_with([1, 0])
         self.assertTrue(any('file selection' in line for line in log.output))
 
@@ -647,8 +653,10 @@ class TestDownloadComputesPriorities(unittest.IsolatedAsyncioTestCase):
     async def test_manual_pick_persists_across_versions(self) -> None:
         """A PICK file from a previous version is still included in the new version."""
         session = TorrentSession()
+        # small.html alone at root → budget selects it; media/huge.bin would be
+        # excluded by budget but is PICK → both end up at priority 1.
         handle = self._make_handle([('site/small.html', 100),
-                                    ('site/huge.bin', 10 * 1024 * 1024)])
+                                    ('site/media/huge.bin', 10 * 1024 * 1024)])
         handle.get_file_priorities.return_value = [1, 1]
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -656,8 +664,8 @@ class TestDownloadComputesPriorities(unittest.IsolatedAsyncioTestCase):
             os.makedirs(version_dir)
             torrent_path = os.path.join(version_dir, 'site.torrent')
             site_dir = os.path.dirname(os.path.dirname(torrent_path))
-            # huge.bin is manually picked despite exceeding budget
-            _save_file_priorities(site_dir, {'site/huge.bin': PICK})
+            # media/huge.bin is manually picked despite exceeding budget
+            _save_file_priorities(site_dir, {'site/media/huge.bin': PICK})
 
             with patch.object(session._session, 'add_torrent', return_value=handle), \
                  patch('libtorrent.parse_magnet_uri', return_value=MagicMock()), \
@@ -668,9 +676,7 @@ class TestDownloadComputesPriorities(unittest.IsolatedAsyncioTestCase):
                     await session.download('magnet:?xt=urn:btih:abc', version_dir, torrent_path,
                                            max_site_mb=1)
 
-        # huge.bin is PICK so lt prio = 1, no prioritize_files call needed
-        # (all prios are 1, so the `if any(p == 0 for p in prios)` gate is False)
-        # But actually small.html=1, huge.bin=1 → no call since no zeros
+        # small.html=1 (budget), media/huge.bin=1 (PICK) → all prios 1 → no call
         handle.prioritize_files.assert_not_called()
 
 
@@ -1177,22 +1183,24 @@ class TestResetFilePriorities(unittest.TestCase):
 
     def test_clears_manual_states_and_reruns_budget(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            files = [('site/small.html', 100), ('site/huge.bin', 10 * 1024 * 1024)]
+            # small.html alone at root → budget selects it; media/huge.bin is in
+            # a subdir → budget excludes it.
+            files = [('site/small.html', 100), ('site/media/huge.bin', 10 * 1024 * 1024)]
             session, torrent_path = self._make_session_with_handle(tmp, files)
             site_dir = _site_dir(torrent_path)
             # Pre-populate with manual overrides
             _save_file_priorities(site_dir, {
-                'site/small.html': SKIP,   # manually excluded
-                'site/huge.bin': PICK,     # manually included
+                'site/small.html': SKIP,        # manually excluded
+                'site/media/huge.bin': PICK,    # manually included
             })
             with self.assertLogs('daemon.session', level='INFO'):
                 result = session.reset_file_priorities(torrent_path, max_site_mb=1)
 
             self.assertTrue(result)
             stored = _load_file_priorities(site_dir)
-            # After reset: budget re-runs.  small.html fits (100 B), huge.bin doesn't (10 MB).
+            # After reset: budget re-runs.  small.html fits (100 B), media/huge.bin doesn't.
             self.assertEqual(stored['site/small.html'], AUTO_PICK)
-            self.assertEqual(stored['site/huge.bin'], AUTO_SKIP)
+            self.assertEqual(stored['site/media/huge.bin'], AUTO_SKIP)
             session._handles[torrent_path].prioritize_files.assert_called_once_with([1, 0])
 
     def test_deletes_files_newly_excluded_by_reset(self) -> None:
