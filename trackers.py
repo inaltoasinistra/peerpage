@@ -53,4 +53,5 @@ class TrackerList:
 
     @staticmethod
     def select(count: int = 3) -> list[str]:
-        return random.sample(TrackerList._load(), count)
+        trackers = TrackerList._load()
+        return random.sample(trackers, min(count, len(trackers)))

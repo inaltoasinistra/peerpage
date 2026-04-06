@@ -60,6 +60,27 @@ class TestLoadTrackers(unittest.TestCase):
         self.assertEqual(result, TRACKERS_FALLBACK)
 
 
+class TestSelect(unittest.TestCase):
+
+    def test_returns_requested_count_when_list_is_large(self) -> None:
+        trackers = [f'udp://t{i}.com:80/announce' for i in range(10)]
+        with patch.object(TrackerList, '_load', return_value=trackers):
+            result = TrackerList.select(3)
+        self.assertEqual(len(result), 3)
+
+    def test_returns_all_when_list_is_shorter_than_count(self) -> None:
+        """select() must not crash when the cached list has fewer than count entries."""
+        short = ['udp://only.com:80/announce', 'udp://two.com:80/announce']
+        with patch.object(TrackerList, '_load', return_value=short):
+            result = TrackerList.select(3)
+        self.assertEqual(sorted(result), sorted(short))
+
+    def test_empty_list_returns_empty(self) -> None:
+        with patch.object(TrackerList, '_load', return_value=[]):
+            result = TrackerList.select(3)
+        self.assertEqual(result, [])
+
+
 class TestFetch(unittest.TestCase):
 
     def test_parses_tracker_list(self) -> None:
