@@ -35,11 +35,11 @@ always emitted (`nostr_client.py:43–47`) but were previously absent from the e
 
 **Actual file names (from the code):**
 
-| Documented name    | Actual name      | Where in code                                    |
-|--------------------|------------------|--------------------------------------------------|
-| `<version>.torrent`| `site.torrent`   | `watcher.py:97`, `publisher.py:137`              |
-| `<version>.txt`    | `changelog.txt`  | `publisher.py:126,142`                           |
-| `<version>.resume` | `site.resume`    | `session.py:237` (`torrent_path.replace(…)`)     |
+| Documented name     | Actual name     | Where in code                                |
+|---------------------|-----------------|----------------------------------------------|
+| `<version>.torrent` | `site.torrent`  | `watcher.py:97`, `publisher.py:137`          |
+| `<version>.txt`     | `changelog.txt` | `publisher.py:126,142`                       |
+| `<version>.resume`  | `site.resume`   | `session.py:237` (`torrent_path.replace(…)`) |
 
 The corrected layout:
 ```
@@ -50,3 +50,48 @@ The corrected layout:
   event.json       # Nostr event that triggered this version (downloaded sites only)
   site/            # actual site files
 ```
+
+---
+
+## NIP.md vs code discrepancies
+
+### NIP-1 · `protocol` tag value contradicts the NIP's own definition
+
+**NIP.md says:** "The `protocol` tag carries a non-negative integer string."
+
+**Code:** `nostr_client.py:15` → `PROTOCOL_VERSION = '-1'`
+
+`-1` is a negative integer, violating the definition. It is used as a pre-release placeholder,
+but the NIP must be consistent with the code. Either:
+
+- Change the NIP to say the value is an arbitrary string (or that `-1` signals pre-release), or
+- Define `0` as the initial protocol version and update both the NIP and the code.
+
+---
+
+### NIP-2 · v1-only torrent rejection — **FIXED**
+
+NIP.md, `snapshot.py`, and `daemon/watcher.py` have been updated so that:
+
+- Hybrid v1+v2 and pure v2 torrents are accepted.
+- Pure v1 torrents are rejected at two points: in `_seed_if_new` (locally published sites) and
+  in `_download` (downloaded sites), both calling `_reject_version` with reason `'v1-only torrent'`.
+- `is_v1_only()` in `snapshot.py` detects v1-only by checking that all SHA-256 Merkle roots
+  are zero or that `files.root(i)` raises `ValueError`.
+- `NIP.md` was updated to reflect that hybrid v1+v2 AND pure v2 are accepted; clients SHOULD
+  publish hybrid.
+
+---
+
+### NIP-3 · Magnet URI is not validated for dual-hash presence
+
+**NIP.md says:** the `magnet` tag "MUST include both `xt=urn:btih:` (v1 info-hash) and
+`xt=urn:btmh:` (v2 info-hash) parameters."
+
+**Code:** `_read_magnet()` in `watcher.py:264–272` extracts the magnet string from `event.json`
+and passes it directly to `lt.parse_magnet_uri()` with no format check. A magnet URI with only a
+v1 hash (no `xt=urn:btmh:`) is accepted and downloaded.
+
+**Proposed fix:** Before starting a download, check that the magnet URI contains both
+`xt=urn:btih:` and `xt=urn:btmh:`. If not, reject the version with the same `_reject_version()`
+path used for bad directory structures.

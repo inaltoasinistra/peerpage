@@ -74,10 +74,13 @@ It falls in the NIP-01 addressable range `[30000, 40000)`.
 
 ### BitTorrent Version
 
-Torrents MUST be **hybrid v1+v2** (BEP-52). Pure v1 torrents MUST be rejected
-because SHA-256 Merkle roots (a v2 feature) are required for content integrity
-verification and deduplication. v2-only torrents MUST be rejected because they
-have poor propagation across the existing tracker and DHT network.
+Torrents MUST carry v2 file metadata (BEP-52). Pure v1 torrents MUST be
+rejected because SHA-256 Merkle roots are required for per-file integrity
+verification and cross-version deduplication.
+
+Both **hybrid v1+v2** and **pure v2** torrents are accepted. Clients SHOULD
+publish hybrid v1+v2 torrents to maximise propagation across trackers and the
+DHT network, which has broad v1 support but limited v2 support.
 
 ### Directory Structure
 
@@ -162,9 +165,10 @@ finalised.
 2. Discard events with an unsupported or missing `protocol` tag.
 3. Among remaining events, select the one with the **latest `created_at`**.
 4. Download the torrent identified by the `magnet` tag.
-5. Validate that every file path in the torrent begins with `site/`.
-   Reject and permanently discard the torrent if not; do not retry the same
-   event.
+5. Validate the downloaded torrent:
+   - MUST have v2 file metadata (SHA-256 Merkle roots). Reject pure v1 torrents.
+   - Every file path MUST begin with `site/`. Reject torrents that violate this.
+   Rejected torrents MUST be permanently discarded; do not retry the same event.
 6. Re-seed the torrent to contribute bandwidth to the network.
 
 ### Version Updates

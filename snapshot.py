@@ -2,6 +2,28 @@ import libtorrent as lt
 
 from fileutil import atomic_open
 
+_ZERO_ROOT = bytes(32)
+
+
+def is_v1_only(torrent_path: str) -> bool:
+    """Return True if the torrent has no v2 per-file SHA-256 roots.
+
+    A hybrid v1+v2 or pure v2 torrent has a non-zero SHA-256 Merkle root for
+    every real (non-pad) file.  A v1-only torrent returns all-zero roots or
+    raises ValueError.  Pure v1 torrents are rejected by peerpage because
+    per-file SHA-256 roots are required for cross-version deduplication.
+    """
+    info = lt.torrent_info(torrent_path)
+    files = info.files()
+    for i in range(files.num_files()):
+        try:
+            root = bytes.fromhex(str(files.root(i)))
+        except ValueError:
+            return True  # root() not available → v1-only
+        if root != _ZERO_ROOT:
+            return False  # found a real v2 root → not v1-only
+    return True  # all roots were zero (pad files only, or v1-only)
+
 
 def torrent_manifest(torrent_path: str) -> dict[str, bytes]:
     """Return {rel_path: sha256_root} for each file in a hybrid v2 torrent."""

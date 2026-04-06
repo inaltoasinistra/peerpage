@@ -163,6 +163,9 @@ class TestSyncSiteSeeding(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.data_dir = os.path.join(self.tmp.name, 'data')
         self.sites_dir = os.path.join(self.tmp.name, 'sites')
+        patcher = patch('daemon.watcher.is_v1_only', return_value=False)
+        self.mock_is_v1_only = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -228,6 +231,18 @@ class TestSyncSiteSeeding(unittest.TestCase):
         self.assertTrue(os.path.isdir(orphan_dir))
         session.stop_site.assert_not_called()
 
+    def test_removes_orphaned_version_dir_logs_oserror(self) -> None:
+        """OSError when removing an orphaned dir is logged and does not raise."""
+        orphan_dir = os.path.join(self.data_dir, 'sites', FAKE_NPUB, 'site_a', '1')
+        os.makedirs(orphan_dir)
+        session = MagicMock()
+        watcher = Watcher(self.sites_dir, self.data_dir, session)
+        site_dir = self._site_dir(FAKE_NPUB, 'site_a')
+        with patch('daemon.watcher.rmtree', side_effect=OSError('disk error')), \
+             self.assertLogs('daemon.watcher', level='WARNING') as log:
+            watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)  # must not raise
+        self.assertTrue(any('disk error' in line for line in log.output))
+
     def test_purges_over_cap_complete_versions(self) -> None:
         """When there are more than MAX_VERSIONS complete versions, oldest are purged."""
         for ver in range(1, MAX_VERSIONS + 2):
@@ -241,6 +256,18 @@ class TestSyncSiteSeeding(unittest.TestCase):
         self.assertFalse(os.path.isdir(oldest_dir))
         self.assertTrue(any('purging' in line for line in log.output))
 
+    def test_purge_over_cap_logs_oserror(self) -> None:
+        """OSError when purging an over-cap version is logged and does not raise."""
+        for ver in range(1, MAX_VERSIONS + 2):
+            self._torrent(FAKE_NPUB, 'site_a', ver)
+        session = MagicMock()
+        watcher = Watcher(self.sites_dir, self.data_dir, session)
+        site_dir = self._site_dir(FAKE_NPUB, 'site_a')
+        with patch('daemon.watcher.rmtree', side_effect=OSError('no space')), \
+             self.assertLogs('daemon.watcher', level='WARNING') as log:
+            watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)  # must not raise
+        self.assertTrue(any('no space' in line for line in log.output))
+
     def test_seed_failure_does_not_raise(self) -> None:
         self._torrent(FAKE_NPUB, 'site_a', 1)
         session = MagicMock()
@@ -251,6 +278,31 @@ class TestSyncSiteSeeding(unittest.TestCase):
             watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)  # must not raise
         self.assertTrue(any('failed to seed' in line for line in log.output))
 
+    def test_seed_failure_unlink_error_is_ignored(self) -> None:
+        """OSError when unlinking a broken torrent after seed failure is silently ignored."""
+        self._torrent(FAKE_NPUB, 'site_a', 1)
+        session = MagicMock()
+        session.seed.side_effect = RuntimeError('bad torrent')
+        watcher = Watcher(self.sites_dir, self.data_dir, session)
+        site_dir = self._site_dir(FAKE_NPUB, 'site_a')
+        with patch('daemon.watcher.os.unlink', side_effect=OSError('busy')), \
+             self.assertLogs('daemon.watcher', level='WARNING'):
+            watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)  # must not raise
+
+    def test_seed_if_new_rejects_v1_only_torrent(self) -> None:
+        """_seed_if_new writes a rejected marker and does not seed a v1-only torrent."""
+        path = self._torrent(FAKE_NPUB, 'site_a', 1)
+        ver_dir = os.path.dirname(path)
+        self.mock_is_v1_only.return_value = True
+        session = MagicMock()
+        watcher = Watcher(self.sites_dir, self.data_dir, session)
+        site_dir = self._site_dir(FAKE_NPUB, 'site_a')
+        with self.assertLogs('daemon.watcher', level='WARNING') as log:
+            watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)
+        session.seed.assert_not_called()
+        self.assertTrue(os.path.exists(os.path.join(ver_dir, 'rejected')))
+        self.assertTrue(any('v1' in line.lower() for line in log.output))
+
 
 class TestSyncSiteDownload(unittest.IsolatedAsyncioTestCase):
 
@@ -258,6 +310,9 @@ class TestSyncSiteDownload(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.data_dir = os.path.join(self.tmp.name, 'data')
         self.sites_dir = os.path.join(self.tmp.name, 'sites')
+        patcher = patch('daemon.watcher.is_v1_only', return_value=False)
+        self.mock_is_v1_only = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -375,6 +430,9 @@ class TestDownload(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.data_dir = os.path.join(self.tmp.name, 'data')
         self.sites_dir = os.path.join(self.tmp.name, 'sites')
+        patcher = patch('daemon.watcher.is_v1_only', return_value=False)
+        self.mock_is_v1_only = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -516,6 +574,40 @@ class TestDownload(unittest.IsolatedAsyncioTestCase):
             await watcher._download('site_a', magnet, FAKE_NPUB, 1, None)
         mock_finalize.assert_called_once_with(1, None, magnet)
 
+    async def test_rejects_v1_only_torrent(self) -> None:
+        """_download writes a rejected marker and skips finalize for a v1-only torrent."""
+        self.mock_is_v1_only.return_value = True
+        magnet = 'magnet:?xt=urn:btih:abc'
+        session = MagicMock()
+        session.download = AsyncMock(return_value=None)
+        session.stop_site = MagicMock()
+        watcher = Watcher(self.sites_dir, self.data_dir, session)
+        ver_dir = os.path.join(self.data_dir, 'sites', FAKE_NPUB, 'site_a', '1')
+        os.makedirs(ver_dir)
+        with patch.object(Site, 'finalize_download') as mock_finalize, \
+             self.assertLogs('daemon.watcher', level='WARNING') as log:
+            await watcher._download('site_a', magnet, FAKE_NPUB, 1, None)
+        mock_finalize.assert_not_called()
+        session.stop_site.assert_called_once_with(ver_dir)
+        self.assertTrue(os.path.exists(os.path.join(ver_dir, 'rejected')))
+        self.assertTrue(any('v1' in line.lower() for line in log.output))
+
+    async def test_reject_version_removes_content_dir(self) -> None:
+        """_reject_version deletes an existing site/ content directory."""
+        magnet = 'magnet:?xt=urn:btih:abc'
+        session = MagicMock()
+        session.download = AsyncMock(return_value=None)
+        session.stop_site = MagicMock()
+        watcher = Watcher(self.sites_dir, self.data_dir, session)
+        ver_dir = os.path.join(self.data_dir, 'sites', FAKE_NPUB, 'site_a', '1')
+        content_dir = os.path.join(ver_dir, 'site')
+        os.makedirs(content_dir)
+        self.mock_is_v1_only.return_value = True
+        with patch.object(Site, 'finalize_download'), \
+             self.assertLogs('daemon.watcher', level='WARNING'):
+            await watcher._download('site_a', magnet, FAKE_NPUB, 1, None)
+        self.assertFalse(os.path.isdir(content_dir))
+
 
 class TestSync(unittest.IsolatedAsyncioTestCase):
 
@@ -523,6 +615,9 @@ class TestSync(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.data_dir = os.path.join(self.tmp.name, 'data')
         self.sites_dir = os.path.join(self.tmp.name, 'sites')
+        patcher = patch('daemon.watcher.is_v1_only', return_value=False)
+        self.mock_is_v1_only = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()

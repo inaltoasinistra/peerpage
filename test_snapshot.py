@@ -1,12 +1,12 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import libtorrent as lt
 
 from publisher import Site
-from snapshot import diff_manifests, torrent_manifest, write_changelog
+from snapshot import diff_manifests, is_v1_only, torrent_manifest, write_changelog
 
 FAKE_NPUB = 'npub1testfake'
 
@@ -24,6 +24,43 @@ def _make_site(tmp: str, name: str, files: dict[str, str]) -> Site:
     s = Site(name, sites_dir=sites_dir, data_dir=data_dir, npub=FAKE_NPUB)
     s.create()
     return s
+
+
+class TestIsV1Only(unittest.TestCase):
+
+    def _make_mock_info(self, roots: list) -> MagicMock:
+        """Build a mock torrent_info whose files().root(i) returns *roots* in order."""
+        fs = MagicMock()
+        fs.num_files.return_value = len(roots)
+        fs.root.side_effect = roots
+        info = MagicMock()
+        info.files.return_value = fs
+        return info
+
+    def test_returns_false_for_hybrid_torrent(self) -> None:
+        """A torrent where at least one file has a non-zero root is v2/hybrid."""
+        non_zero = 'a' * 64  # 32-byte hex string, non-zero
+        info = self._make_mock_info([non_zero, '0' * 64])
+        with patch('libtorrent.torrent_info', return_value=info):
+            self.assertFalse(is_v1_only('fake.torrent'))
+
+    def test_returns_true_when_all_roots_are_zero(self) -> None:
+        """All-zero roots means no v2 hashes present — v1-only."""
+        info = self._make_mock_info(['0' * 64, '0' * 64])
+        with patch('libtorrent.torrent_info', return_value=info):
+            self.assertTrue(is_v1_only('fake.torrent'))
+
+    def test_returns_true_when_root_raises_value_error(self) -> None:
+        """root() raising ValueError means the torrent has no v2 metadata."""
+        info = self._make_mock_info([ValueError('no v2')])
+        with patch('libtorrent.torrent_info', return_value=info):
+            self.assertTrue(is_v1_only('fake.torrent'))
+
+    def test_returns_false_for_real_hybrid_torrent(self) -> None:
+        """Torrents created by publisher.py are always hybrid and must not be rejected."""
+        with tempfile.TemporaryDirectory() as tmp:
+            s = _make_site(tmp, 'mysite', {'index.html': 'hello'})
+            self.assertFalse(is_v1_only(s.torrent_path))
 
 
 class TestTorrentManifest(unittest.TestCase):

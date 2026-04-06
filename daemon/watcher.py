@@ -6,7 +6,7 @@ import time
 
 from fileutil import CONTENT_DIR, get_tag, iter_sites, list_version_dirs, rmtree
 from publisher import Site
-from snapshot import torrent_manifest
+from snapshot import is_v1_only, torrent_manifest
 from .session import TorrentSession, KEEP_DURATION, MAX_VERSIONS
 
 logger = logging.getLogger(__name__)
@@ -102,9 +102,15 @@ class Watcher:
         torrent_path = os.path.join(site_dir, str(ver), 'site.torrent')
         if torrent_path in self._seen:
             return
+        ver_dir = os.path.join(site_dir, str(ver))
+        if is_v1_only(torrent_path):
+            logger.warning('%s v%d: rejecting — v1-only torrent (hybrid v1+v2 or v2 required)',
+                           os.path.basename(site_dir), ver)
+            self._reject_version(ver_dir, torrent_path, 'v1-only torrent')
+            return
         self._seen.add(torrent_path)
         try:
-            self._session.seed(torrent_path, os.path.join(site_dir, str(ver)))
+            self._session.seed(torrent_path, ver_dir)
         except Exception as e:
             logger.warning('failed to seed %s: %s — deleting and retrying next cycle', torrent_path, e)
             self._seen.discard(torrent_path)
@@ -156,7 +162,8 @@ class Watcher:
         if magnet is None:
             logger.warning('no magnet tag in event.json for %s/%s v%d — rejecting',
                            npub, site_name, highest)
-            self._reject_version(ver_dir, os.path.join(ver_dir, 'site.torrent'))
+            self._reject_version(ver_dir, os.path.join(ver_dir, 'site.torrent'),
+                                 'no magnet tag in event.json')
             return
         prev_version = max(complete) if complete else None
         key = (npub, site_name)
@@ -184,12 +191,20 @@ class Watcher:
             except asyncio.CancelledError:
                 logger.info('%s: download cancelled', site_name)
                 return
+            if is_v1_only(torrent_path):
+                logger.warning(
+                    '%s: rejecting v%d — v1-only torrent (hybrid v1+v2 or v2 required)',
+                    site_name, version,
+                )
+                self._reject_version(version_dir, torrent_path, 'v1-only torrent')
+                return
             if not _site_directory_ok(torrent_path):
                 logger.warning(
                     '%s: rejecting v%d — torrent top-level directory is not "site"',
                     site_name, version,
                 )
-                self._reject_version(version_dir, torrent_path)
+                self._reject_version(version_dir, torrent_path,
+                                     'top-level directory is not "site"')
                 return
             site.finalize_download(version, prev_version, magnet_uri)
             logger.info('%s: version %d downloaded', site_name, version)
@@ -198,8 +213,8 @@ class Watcher:
                 del self._tasks[key]
                 self._task_versions.pop(key, None)
 
-    def _reject_version(self, version_dir: str, torrent_path: str) -> None:
-        """Permanently reject a downloaded version with an invalid torrent structure.
+    def _reject_version(self, version_dir: str, torrent_path: str, reason: str) -> None:
+        """Permanently reject a version, writing a 'rejected' marker with *reason*.
 
         Removes the torrent from the session, deletes site.torrent and the
         downloaded site/ content, and writes a 'rejected' marker file so that
@@ -213,7 +228,7 @@ class Watcher:
             rmtree(content_dir)
         os.makedirs(version_dir, exist_ok=True)
         with open(os.path.join(version_dir, 'rejected'), 'w') as f:
-            f.write('top-level directory is not "site"\n')
+            f.write(reason + '\n')
 
     def _maybe_cleanup(self) -> None:
         now = time.monotonic()
