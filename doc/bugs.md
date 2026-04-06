@@ -21,35 +21,12 @@ always emitted (`nostr_client.py:43–47`) but were previously absent from the e
 
 ---
 
-### DOC-2 · File layout names inside a version directory are wrong
+### DOC-2 · File layout names inside a version directory are wrong — **FIXED**
 
-**What CLAUDE.md says (`## File layout` section):**
-```
-<version>/
-  <version>.torrent
-  <version>.txt    # changelog
-  <version>.resume
-  event.json
-  site/
-```
-
-**Actual file names (from the code):**
-
-| Documented name     | Actual name     | Where in code                                |
-|---------------------|-----------------|----------------------------------------------|
-| `<version>.torrent` | `site.torrent`  | `watcher.py:97`, `publisher.py:137`          |
-| `<version>.txt`     | `changelog.txt` | `publisher.py:126,142`                       |
-| `<version>.resume`  | `site.resume`   | `session.py:237` (`torrent_path.replace(…)`) |
-
-The corrected layout:
-```
-<version>/
-  site.torrent
-  changelog.txt
-  site.resume      # libtorrent resume data (crash recovery)
-  event.json       # Nostr event that triggered this version (downloaded sites only)
-  site/            # actual site files
-```
+CLAUDE.md used `<version>.torrent`, `<version>.txt`, and `<version>.resume`. The actual names
+(from `watcher.py:97`, `publisher.py:126,137`, `session.py:237`) are `site.torrent`,
+`changelog.txt`, and `site.resume`. Both the file layout block and the `Site.create()` description
+have been corrected.
 
 ---
 

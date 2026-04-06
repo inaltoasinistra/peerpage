@@ -51,9 +51,9 @@ Environment variables:
     <npub>/              # publisher's Nostr public key (bech32)
       <identifier>/
         <version>/         # immutable snapshot (hard-links to previous where unchanged)
-          <version>.torrent
-          <version>.txt    # changelog: magnet URI + new / modified / deleted files
-          <version>.resume # libtorrent resume data (crash recovery)
+          site.torrent
+          changelog.txt    # changelog: magnet URI + new / modified / deleted files
+          site.resume      # libtorrent resume data (crash recovery)
           event.json       # Nostr event that triggered this version (downloaded sites only)
           site/            # actual site files
 
@@ -73,8 +73,8 @@ Environment variables:
 
 - `Site.create()` — compares `SITES_DIR/<identifier>/` against the last snapshot and, if changed:
   1. Snapshots source into `DATA_DIR/sites/<npub>/<identifier>/<version>/site/`, hard-linking unchanged files
-  2. Builds a libtorrent `file_storage` and writes `…/<version>/<version>.torrent`
-  3. Writes `…/<version>/<version>.txt` changelog (magnet URI + new / modified / deleted files)
+  2. Builds a libtorrent `file_storage` and writes `…/<version>/site.torrent`
+  3. Writes `…/<version>/changelog.txt` (magnet URI + new / modified / deleted files)
 
 - `Site.finalize_download()` — called by the daemon after a download completes; writes the changelog by diffing against the previous version.
 
