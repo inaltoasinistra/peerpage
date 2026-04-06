@@ -137,13 +137,19 @@ Example: `peerpage://myblog.npub1abc123…`
 
 ## Protocol Versioning
 
-The `protocol` tag carries a non-negative integer string representing the
-protocol version. Clients MUST process events with a version they support and
-MUST reject events with an unsupported or missing `protocol` tag.
+The `protocol` tag carries an integer string representing the protocol version.
+
+The special value `"-1"` signals a pre-release or development build. Clients
+SHOULD accept events with `protocol` equal to `"-1"` for testing purposes, but
+MAY reject them in production deployments.
+
+Non-negative integer values (`"0"`, `"1"`, …) are stable protocol versions.
+Clients MUST process events with a version they support and MUST reject events
+with an unsupported or missing `protocol` tag.
 
 Each revision of this NIP that changes the event format or the torrent
 structure in a backward-incompatible way MUST increment the protocol version.
-The protocol version for this specification will be assigned when the NIP is
+The first stable protocol version is `"0"`; it will be assigned when the NIP is
 finalised.
 
 ## Client Behaviour

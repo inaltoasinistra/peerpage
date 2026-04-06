@@ -32,17 +32,11 @@ have been corrected.
 
 ## NIP.md vs code discrepancies
 
-### NIP-1 · `protocol` tag value contradicts the NIP's own definition
+### NIP-1 · `protocol` tag value contradicts the NIP's own definition — **FIXED**
 
-**NIP.md says:** "The `protocol` tag carries a non-negative integer string."
-
-**Code:** `nostr_client.py:15` → `PROTOCOL_VERSION = '-1'`
-
-`-1` is a negative integer, violating the definition. It is used as a pre-release placeholder,
-but the NIP must be consistent with the code. Either:
-
-- Change the NIP to say the value is an arbitrary string (or that `-1` signals pre-release), or
-- Define `0` as the initial protocol version and update both the NIP and the code.
+NIP.md now defines `"-1"` as the pre-release sentinel value (accepted for testing, MAY be
+rejected in production). Stable versions start at `"0"`. This matches `nostr_client.py:15`
+where `PROTOCOL_VERSION = '-1'`.
 
 ---
 
