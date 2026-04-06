@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from publisher import Site
 from .session import MAX_VERSIONS
 from .watcher import (Watcher, CLEANUP_INTERVAL, _classify_versions,
-                      _read_magnet, _site_directory_ok)
+                      _magnet_is_v1_only, _read_magnet, _site_directory_ok)
 
 FAKE_NPUB = 'npub1testfake'
 
@@ -18,7 +18,7 @@ def touch(path: str) -> None:
     open(path, 'w').close()
 
 
-def _write_event(ver_dir: str, magnet: str = 'magnet:?xt=urn:btih:abc') -> None:
+def _write_event(ver_dir: str, magnet: str = 'magnet:?xt=urn:btih:abc&xt=urn:btmh:1220eeff') -> None:
     os.makedirs(ver_dir, exist_ok=True)
     event = {'id': None, 'created_at': 1000, 'pubkey': 'remote',
              'tags': [['magnet', magnet]]}
@@ -132,6 +132,23 @@ class TestSiteDirectoryOk(unittest.TestCase):
         with patch('daemon.watcher.torrent_manifest',
                    return_value=['index.html', 'site/style.css']):
             self.assertFalse(_site_directory_ok(path))
+
+
+class TestMagnetIsV1Only(unittest.TestCase):
+
+    def test_returns_true_when_no_btmh(self) -> None:
+        """A magnet with only xt=urn:btih: is v1-only."""
+        self.assertTrue(_magnet_is_v1_only('magnet:?xt=urn:btih:aabbcc&dn=site'))
+
+    def test_returns_false_for_hybrid_magnet(self) -> None:
+        """A hybrid magnet contains both xt=urn:btih: and xt=urn:btmh:."""
+        self.assertFalse(_magnet_is_v1_only(
+            'magnet:?xt=urn:btih:aabbcc&xt=urn:btmh:1220eeff&dn=site'
+        ))
+
+    def test_returns_false_for_v2_only_magnet(self) -> None:
+        """A pure v2 magnet with only xt=urn:btmh: is not v1-only."""
+        self.assertFalse(_magnet_is_v1_only('magnet:?xt=urn:btmh:1220eeff&dn=site'))
 
 
 class TestReadMagnet(unittest.TestCase):
@@ -325,7 +342,7 @@ class TestSyncSiteDownload(unittest.IsolatedAsyncioTestCase):
         touch(path)
 
     def _incomplete(self, npub: str, site: str, ver: int,
-                    magnet: str = 'magnet:?xt=urn:btih:abc') -> None:
+                    magnet: str = 'magnet:?xt=urn:btih:abc&xt=urn:btmh:1220eeff') -> None:
         ver_dir = os.path.join(self.data_dir, 'sites', npub, site, str(ver))
         _write_event(ver_dir, magnet)
 
@@ -386,7 +403,7 @@ class TestSyncSiteDownload(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(watcher._task_versions[key], 1)
 
         # v2 appears while v1 is still in-progress
-        self._incomplete(FAKE_NPUB, 'site_a', 2, magnet='magnet:?xt=urn:btih:new')
+        self._incomplete(FAKE_NPUB, 'site_a', 2, magnet='magnet:?xt=urn:btih:new&xt=urn:btmh:1220aabb')
         with self.assertLogs('daemon.watcher', level='INFO'):
             watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)
 
@@ -409,6 +426,20 @@ class TestSyncSiteDownload(unittest.IsolatedAsyncioTestCase):
             watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)
         watcher._download.assert_not_called()
         self.assertTrue(any('no magnet' in line for line in log.output))
+
+    async def test_skips_download_when_magnet_is_v1_only(self) -> None:
+        """A magnet URI with no xt=urn:btmh: is rejected before the download starts."""
+        self._incomplete(FAKE_NPUB, 'site_a', 1, magnet='magnet:?xt=urn:btih:aabbcc')
+        session = MagicMock()
+        watcher = Watcher(self.sites_dir, self.data_dir, session)
+        watcher._download = AsyncMock()
+        site_dir = self._site_dir(FAKE_NPUB, 'site_a')
+        ver_dir = os.path.join(site_dir, '1')
+        with self.assertLogs('daemon.watcher', level='WARNING') as log:
+            watcher._sync_site(FAKE_NPUB, 'site_a', site_dir)
+        watcher._download.assert_not_called()
+        self.assertTrue(os.path.exists(os.path.join(ver_dir, 'rejected')))
+        self.assertTrue(any('v1' in line.lower() for line in log.output))
 
     async def test_passes_prev_version_from_complete_versions(self) -> None:
         self._torrent(FAKE_NPUB, 'site_a', 1)

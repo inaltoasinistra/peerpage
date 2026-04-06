@@ -165,6 +165,12 @@ class Watcher:
             self._reject_version(ver_dir, os.path.join(ver_dir, 'site.torrent'),
                                  'no magnet tag in event.json')
             return
+        if _magnet_is_v1_only(magnet):
+            logger.warning('v1-only magnet URI for %s/%s v%d — rejecting',
+                           npub, site_name, highest)
+            self._reject_version(ver_dir, os.path.join(ver_dir, 'site.torrent'),
+                                 'v1-only magnet URI (no xt=urn:btmh:)')
+            return
         prev_version = max(complete) if complete else None
         key = (npub, site_name)
         task = asyncio.create_task(
@@ -270,6 +276,15 @@ def _classify_versions(site_dir: str) -> tuple[list[int], list[int]]:
         elif os.path.isfile(os.path.join(ver_dir, 'event.json')):
             incomplete.append(ver)
     return complete, incomplete
+
+
+def _magnet_is_v1_only(magnet_uri: str) -> bool:
+    """Return True if the magnet URI carries no v2 info-hash.
+
+    A hybrid (v1+v2) or pure v2 magnet always contains ``xt=urn:btmh:``.
+    A v1-only magnet has only ``xt=urn:btih:`` and no ``xt=urn:btmh:``.
+    """
+    return 'xt=urn:btmh:' not in magnet_uri
 
 
 def _site_directory_ok(torrent_path: str) -> bool:

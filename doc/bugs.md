@@ -60,15 +60,9 @@ NIP.md, `snapshot.py`, and `daemon/watcher.py` have been updated so that:
 
 ---
 
-### NIP-3 · Magnet URI is not validated for dual-hash presence
+### NIP-3 · Magnet URI is not validated for v2 hash presence — **FIXED**
 
-**NIP.md says:** the `magnet` tag "MUST include both `xt=urn:btih:` (v1 info-hash) and
-`xt=urn:btmh:` (v2 info-hash) parameters."
-
-**Code:** `_read_magnet()` in `watcher.py:264–272` extracts the magnet string from `event.json`
-and passes it directly to `lt.parse_magnet_uri()` with no format check. A magnet URI with only a
-v1 hash (no `xt=urn:btmh:`) is accepted and downloaded.
-
-**Proposed fix:** Before starting a download, check that the magnet URI contains both
-`xt=urn:btih:` and `xt=urn:btmh:`. If not, reject the version with the same `_reject_version()`
-path used for bad directory structures.
+`_start_download` in `watcher.py` now calls `_magnet_is_v1_only()` after reading the magnet URI.
+A URI without `xt=urn:btmh:` is considered v1-only and the version is rejected immediately via
+`_reject_version()`, before any download attempt. Hybrid (v1+v2) and pure v2 magnets both carry
+`xt=urn:btmh:` and are accepted.
