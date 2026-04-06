@@ -6,42 +6,6 @@ After a fix, remove the description of the bug from this file.
 
 ---
 
-## True bugs
-
-### BUG-2 · `KEEP_DURATION` default is 1 day, documented as 1 week
-
-**File:** `daemon/session.py:205–207`
-
-```python
-KEEP_DURATION = datetime.timedelta(
-    seconds=int(os.environ.get('PEERPAGE_KEEP_SECONDS', 24 * 3600))
-)
-```
-
-`24 * 3600 = 86400` seconds = **1 day**.
-
-`CLAUDE.md` (line 41 in the env-vars table and line 179 in the API section) states the default is
-`604800 (1 week)`.  Users who rely on the documented behaviour will find old versions deleted after
-a single day instead of a week.
-
-**Proposed fix (choose one):**
-
-Option A — match the documentation (extend retention to 1 week):
-```python
-KEEP_DURATION = datetime.timedelta(
-    seconds=int(os.environ.get('PEERPAGE_KEEP_SECONDS', 7 * 24 * 3600))
-)
-```
-
-Option B — update the documentation to reflect the current 1-day default:
-```
-# CLAUDE.md line 41
-| `PEERPAGE_KEEP_SECONDS` | `86400` (1 day) | How long old versions are kept after their last upload |
-```
-and update line 179 accordingly.
-
----
-
 ## CLAUDE.md inaccuracies
 
 These are not runtime bugs but they make the documentation misleading.

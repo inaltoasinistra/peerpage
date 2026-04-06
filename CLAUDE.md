@@ -38,7 +38,7 @@ Environment variables:
 | `HTTP_BASE`             | `http://localhost:8008`          | HTTP base URL used by `cli.py` to reach the daemon              |
 | `PEERPAGE_URL`          | `http://localhost:8008`          | HTTP base URL used by `tui.py` to reach the daemon              |
 | `PEERPAGE_LOCK`         | `/tmp/peerpage.lock`             | Lock file path; prevents two daemons from running simultaneously |
-| `PEERPAGE_KEEP_SECONDS` | `604800` (1 week)                | How long old versions are kept after their last upload           |
+| `PEERPAGE_KEEP_SECONDS` | `86400` (1 day)                  | How long old versions are kept after their last upload           |
 
 ## File layout
 
@@ -176,7 +176,7 @@ Module-level helpers in `daemon/watcher.py` shared across the daemon: `_next_ver
 | `/@/api/delete/{identifier}`         | POST   | `{"ok": true}` — stop and delete a site                                    |
 | `/@/api/stop`                        | POST   | `{"ok": true}` — stop the daemon                                           |
 
-Old versions are automatically removed once their `last_upload` age exceeds `KEEP_DURATION` (default 1 week, overridden by `PEERPAGE_KEEP_SECONDS`). The latest version of each site is always kept. For versions that were never uploaded, the torrent file mtime is used as the age reference. Cleanup runs at most every `min(CLEANUP_INTERVAL, KEEP_DURATION)` to respect short keep durations.
+Old versions are automatically removed once their `last_upload` age exceeds `KEEP_DURATION` (default 1 day, overridden by `PEERPAGE_KEEP_SECONDS`). The latest version of each site is always kept. For versions that were never uploaded, the torrent file mtime is used as the age reference. Cleanup runs at most every `min(CLEANUP_INTERVAL, KEEP_DURATION)` to respect short keep durations.
 
 Only one daemon instance is allowed at a time, enforced via `fcntl.flock` on `PEERPAGE_LOCK`.
 
