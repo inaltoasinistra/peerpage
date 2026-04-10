@@ -76,13 +76,40 @@ identity (nsec/npub), relay list, and followed publishers.
 
 ## Environment variables
 
-| Variable                | Default                     | Description                            |
-|-------------------------|-----------------------------|----------------------------------------|
-| `SITES_DIR`             | `~/peerpage`                | Your site content folders              |
-| `DATA_DIR`              | `~/.local/share/peerpage`   | Snapshots, torrents, resume files      |
-| `PEERPAGE_CONFIG_DIR`   | `~/.config/peerpage`        | Config directory                       |
-| `HTTP_PORT`             | `8008`                      | Daemon HTTP port                       |
+| Variable                | Default                     | Description                              |
+|-------------------------|-----------------------------|------------------------------------------|
+| `SITES_DIR`             | `~/peerpage`                | Your site content folders                |
+| `DATA_DIR`              | `~/.local/share/peerpage`   | Snapshots, torrents, resume files        |
+| `PEERPAGE_CONFIG_DIR`   | `~/.config/peerpage`        | Config directory                         |
+| `HTTP_PORT`             | `8008`                      | Daemon HTTP port                         |
 | `PEERPAGE_KEEP_SECONDS` | `86400`                     | How long old versions are kept (seconds) |
+
+## Releasing a new version
+
+1. Set the version in `version.py`:
+   ```python
+   _VERSION: str | None = "0.2.0"
+   ```
+
+2. Update `pyproject.toml` to match:
+   ```toml
+   version = "0.2.0"
+   ```
+
+3. Commit and tag:
+   ```
+   git add version.py pyproject.toml
+   git commit -m "feat release 0.2.0"
+   git tag v0.2.0
+   git push origin main v0.2.0
+   ```
+
+4. Build and upload to PyPI:
+   ```
+   pip install build twine
+   python -m build
+   twine upload dist/peerpage-0.2.0*
+   ```
 
 ## Development
 
