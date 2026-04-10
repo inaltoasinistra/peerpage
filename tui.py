@@ -10,6 +10,17 @@ BASE_URL = os.environ.get('PEERPAGE_URL', 'http://localhost:8008')
 REFRESH = 1.0  # seconds between polls
 
 
+_STATE_LABEL: dict[str, str] = {
+    'checking_files':        'chk files',
+    'downloading_metadata':  'dl metadata',
+    'checking_resume_data':  'chk resume',
+}
+
+
+def _format_state(state: str) -> str:
+    return _STATE_LABEL.get(state, state)
+
+
 def _format_rate(bps: int) -> str:
     if bps >= 1_000_000:
         return f'{bps / 1_000_000:.1f} MB/s'
@@ -95,7 +106,7 @@ def _draw(stdscr: curses.window) -> None:
                      f' peerpage   {n} {label}   ↑ {_format_rate(total_up)}   ↓ {_format_rate(total_dn)}',
                      curses.color_pair(1) | curses.A_BOLD)
 
-        cols = (f'  {"ID  ":<20} {"VER":>4}  {"STATE":<12}'
+        cols = (f'  {"ID":<20} {"VER":>4}  {"STATE":<12}'
                 f' {"UP":>10} {"DN":>10} {"DISK":>10} {"EXCL":>10} {"PEERS":>6}')
         _safe_addstr(stdscr, 2, 0, cols, curses.A_UNDERLINE)
 
@@ -108,7 +119,7 @@ def _draw(stdscr: curses.window) -> None:
             line = (
                 f'  {site.get("identifier", "?"):<20}'
                 f' {site.get("version", "?"):>4} '
-                f' {state:<12}'
+                f' {_format_state(state):<12}'
                 f' {_format_rate(site["upload_rate"]):>10}'
                 f' {_format_rate(site["download_rate"]):>10}'
                 f' {_format_bytes(site["disk_bytes"]):>10}'

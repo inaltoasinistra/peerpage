@@ -216,6 +216,14 @@ class TorrentSession:
             'alert_mask': lt.alert.category_t.status_notification
                         | lt.alert.category_t.error_notification
                         | lt.alert.category_t.tracker_notification,
+            # Allow multiple connections from the same IP.  Required when
+            # several daemons run on the same machine (e.g. stress testing):
+            # public trackers drop peers whose IP matches the requester's, so
+            # the only reliable discovery path is LSD multicast.
+            'allow_multiple_connections_per_ip': True,
+            # LSD defaults to a 5-minute announce interval; reduce it so
+            # same-machine peers are found within seconds, not minutes.
+            'local_service_announce_interval': 10,
         })
         self._handles: dict[str, lt.torrent_handle] = {}
         self._pending_resume: dict[lt.torrent_handle, str] = {}
