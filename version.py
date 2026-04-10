@@ -1,6 +1,6 @@
 import subprocess
 
-_VERSION: str | None = None  # Set to a release string, e.g. "0.1.0"
+_VERSION: str | None = "0.1.0"
 
 _commit: str | None = None
 _commit_fetched: bool = False

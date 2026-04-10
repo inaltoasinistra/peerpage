@@ -1,0 +1,12 @@
+[Unit]
+Description=Peerpage — seed and serve decentralized websites over BitTorrent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/peerpage-daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,5 +1,7 @@
+# Runtime dependencies (pinned for development; see pyproject.toml for package metadata)
 libtorrent==2.0.11
 aiohttp
-coverage
 nostr-sdk
-tomli; python_version < "3.11"
+
+# Dev only
+coverage

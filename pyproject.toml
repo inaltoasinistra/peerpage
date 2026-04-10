@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peerpage"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "libtorrent>=2.0,<3",
+    "aiohttp",
+    "nostr-sdk",
+]
+
+[project.scripts]
+peerpage        = "cli:main"
+peerpage-daemon = "daemon.__main__:main"
+peerpage-tui    = "tui:main"
+
+[project.optional-dependencies]
+dev = ["coverage"]
+
+[tool.setuptools]
+packages = ["daemon"]
+py-modules = ["cli", "tui", "config", "publisher", "nostr_client", "trackers", "fileutil", "version", "snapshot"]
