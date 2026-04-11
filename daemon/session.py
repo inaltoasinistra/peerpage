@@ -633,6 +633,90 @@ class TorrentSession:
             'num_sites': len(sites),
         }
 
+    def _torrent_debug_entry(
+        self,
+        handle: lt.torrent_handle,
+        torrent_path: str,
+        peer_sources: dict[int, str],
+    ) -> dict:
+        s = handle.status()
+        version_dir = os.path.dirname(torrent_path)
+        version = int(os.path.basename(version_dir))
+        site_dir = os.path.dirname(version_dir)
+        site_name = os.path.basename(site_dir)
+        npub = os.path.basename(os.path.dirname(site_dir))
+
+        try:
+            error = s.errc.message() if s.errc.value() else ''
+        except Exception:
+            error = str(getattr(s, 'error', ''))
+
+        trackers = []
+        for tr in handle.trackers():
+            # libtorrent Python bindings return announce_entry as dicts
+            if isinstance(tr, dict):
+                endpoints_raw = tr.get('endpoints', [])
+                tr_url = tr.get('url', '')
+                tr_tier = tr.get('tier', 0)
+                tr_fails = tr.get('fails', 0)
+                tr_verified = tr.get('verified', False)
+                tr_updating = tr.get('updating', False)
+            else:
+                endpoints_raw = getattr(tr, 'endpoints', [])
+                tr_url = tr.url
+                tr_tier = tr.tier
+                tr_fails = tr.fails
+                tr_verified = tr.verified
+                tr_updating = tr.updating
+            endpoints = []
+            for ep in endpoints_raw:
+                if isinstance(ep, dict):
+                    endpoints.append({
+                        'message': ep.get('message', ''),
+                        'last_announce': str(ep.get('last_announce', '')),
+                        'next_announce': str(ep.get('next_announce', '')),
+                    })
+                else:
+                    endpoints.append({
+                        'message': getattr(ep, 'message', ''),
+                        'last_announce': str(getattr(ep, 'last_announce', '')),
+                        'next_announce': str(getattr(ep, 'next_announce', '')),
+                    })
+            trackers.append({
+                'url': tr_url,
+                'tier': tr_tier,
+                'fails': tr_fails,
+                'verified': tr_verified,
+                'updating': tr_updating,
+                'endpoints': endpoints,
+            })
+
+        peers = []
+        for p in handle.get_peer_info():
+            src = getattr(p, 'source', 0)
+            peers.append({
+                'ip': f'{p.ip[0]}:{p.ip[1]}',
+                'source': [name for bit, name in peer_sources.items() if src & bit],
+                'progress': round(p.progress, 3),
+                'down_speed': p.payload_down_speed,
+                'up_speed': p.payload_up_speed,
+            })
+
+        return {
+            'identifier': f'{site_name}.{npub[-5:]}',
+            'version': version,
+            'state': str(s.state).split('.')[-1],
+            'error': error,
+            'progress': round(s.progress, 3),
+            'num_peers': s.num_peers,
+            'num_seeds': s.num_seeds,
+            'connect_candidates': getattr(s, 'connect_candidates', 0),
+            'download_rate': s.download_rate,
+            'upload_rate': s.upload_rate,
+            'trackers': trackers,
+            'peers': peers,
+        }
+
     def debug_info(self) -> dict:
         """Return internal libtorrent state for debugging.
 
@@ -650,63 +734,13 @@ class TorrentSession:
         for torrent_path, handle in list(self._handles.items()):
             if not handle.is_valid():
                 continue
-            s = handle.status()
-            version_dir = os.path.dirname(torrent_path)
-            version = int(os.path.basename(version_dir))
-            site_dir = os.path.dirname(version_dir)
-            site_name = os.path.basename(site_dir)
-            npub = os.path.basename(os.path.dirname(site_dir))
-
             try:
-                error = s.errc.message() if s.errc.value() else ''
-            except Exception:
-                error = str(getattr(s, 'error', ''))
+                entry = self._torrent_debug_entry(handle, torrent_path, _peer_sources)
+            except Exception as exc:
+                entry = {'torrent_path': torrent_path, 'debug_error': repr(exc)}
+            torrents.append(entry)
 
-            trackers = []
-            for tr in handle.trackers():
-                endpoints = []
-                for ep in getattr(tr, 'endpoints', []):
-                    endpoints.append({
-                        'message': getattr(ep, 'message', ''),
-                        'last_announce': str(getattr(ep, 'last_announce', '')),
-                        'next_announce': str(getattr(ep, 'next_announce', '')),
-                    })
-                trackers.append({
-                    'url': tr.url,
-                    'tier': tr.tier,
-                    'fails': tr.fails,
-                    'verified': tr.verified,
-                    'updating': tr.updating,
-                    'endpoints': endpoints,
-                })
-
-            peers = []
-            for p in handle.get_peer_info():
-                src = getattr(p, 'source', 0)
-                peers.append({
-                    'ip': f'{p.ip[0]}:{p.ip[1]}',
-                    'source': [name for bit, name in _peer_sources.items() if src & bit],
-                    'progress': round(p.progress, 3),
-                    'down_speed': p.payload_down_speed,
-                    'up_speed': p.payload_up_speed,
-                })
-
-            torrents.append({
-                'identifier': f'{site_name}.{npub[-5:]}',
-                'version': version,
-                'state': str(s.state).split('.')[-1],
-                'error': error,
-                'progress': round(s.progress, 3),
-                'num_peers': s.num_peers,
-                'num_seeds': s.num_seeds,
-                'connect_candidates': getattr(s, 'connect_candidates', 0),
-                'download_rate': s.download_rate,
-                'upload_rate': s.upload_rate,
-                'trackers': trackers,
-                'peers': peers,
-            })
-
-        torrents.sort(key=lambda t: (t['identifier'], t['version']))
+        torrents.sort(key=lambda t: (t.get('identifier', ''), t.get('version', 0)))
         settings = self._session.get_settings()
         return {
             'torrents': torrents,

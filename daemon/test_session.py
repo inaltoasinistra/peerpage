@@ -1596,6 +1596,29 @@ class TestDebugInfo(unittest.TestCase):
         self.assertEqual(tracker['fails'], 2)
         self.assertEqual(tracker['endpoints'][0]['message'], 'connection timed out')
 
+    def test_tracker_fields_when_trackers_are_dicts(self) -> None:
+        """Tracker entries work when libtorrent returns announce_entry as dicts."""
+        tr = {
+            'url': 'udp://tracker.example.com:1234/announce',
+            'tier': 1,
+            'fails': 3,
+            'verified': True,
+            'updating': False,
+            'endpoints': [{'message': 'ok', 'last_announce': 't1', 'next_announce': 't2'}],
+        }
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            tp = self._torrent_path(tmp)
+            session._handles[tp] = self._make_handle(trackers=[tr])
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        tracker = result['torrents'][0]['trackers'][0]
+        self.assertEqual(tracker['url'], 'udp://tracker.example.com:1234/announce')
+        self.assertEqual(tracker['tier'], 1)
+        self.assertEqual(tracker['fails'], 3)
+        self.assertEqual(tracker['endpoints'][0]['message'], 'ok')
+
     def test_peer_source_flags_decoded(self) -> None:
         """Peer source bitmask is decoded to a list of source name strings."""
         peer = MagicMock()
@@ -1651,6 +1674,23 @@ class TestDebugInfo(unittest.TestCase):
         self.assertEqual(identifiers[0][0], 'a_site.abcde')
         self.assertEqual(identifiers[1], (identifiers[2][0], 1))
         self.assertEqual(identifiers[2][1], 2)
+
+    def test_debug_error_entry_on_exception(self) -> None:
+        """If _torrent_debug_entry raises, a debug_error entry is returned instead of a 500."""
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            tp = self._torrent_path(tmp)
+            handle = MagicMock()
+            handle.is_valid.return_value = True
+            handle.status.side_effect = RuntimeError('libtorrent exploded')
+            session._handles[tp] = handle
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        self.assertEqual(len(result['torrents']), 1)
+        entry = result['torrents'][0]
+        self.assertIn('debug_error', entry)
+        self.assertIn('libtorrent exploded', entry['debug_error'])
 
 
 class TestHandleResumeAlert(unittest.TestCase):
