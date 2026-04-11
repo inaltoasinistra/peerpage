@@ -175,6 +175,7 @@ Module-level helpers in `daemon/watcher.py` shared across the daemon: `_next_ver
 | `/@/api/reset/{identifier}`          | POST   | `{"ok": true}` — reset priorities to automatic (re-run budget algorithm)   |
 | `/@/api/delete/{identifier}`         | POST   | `{"ok": true}` — stop and delete a site                                    |
 | `/@/api/stop`                        | POST   | `{"ok": true}` — stop the daemon                                           |
+| `/@/api/debug`                       | GET    | `{torrents, session}` — internal libtorrent state: per-torrent tracker status, connected peers with discovery source (tracker/dht/lsd/pex), error strings, and active session settings |
 
 Old versions are automatically removed once their `last_upload` age exceeds `KEEP_DURATION` (default 1 day, overridden by `PEERPAGE_KEEP_SECONDS`). The latest version of each site is always kept. For versions that were never uploaded, the torrent file mtime is used as the age reference. Cleanup runs at most every `min(CLEANUP_INTERVAL, KEEP_DURATION)` to respect short keep durations.
 

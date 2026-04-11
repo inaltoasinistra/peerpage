@@ -163,6 +163,25 @@ class TestHandlers(unittest.IsolatedAsyncioTestCase):
         resp = await self.client.post('/@/config', data={'max_site_mb': '0'})
         self.assertEqual(resp.status, 400)
 
+    async def test_api_debug_returns_structure(self) -> None:
+        """GET /@/api/debug returns the dict from session.debug_info()."""
+        self.session.debug_info.return_value = {
+            'torrents': [{'identifier': 'x.abc12', 'version': 1, 'state': 'seeding',
+                          'error': '', 'progress': 1.0, 'num_peers': 2, 'num_seeds': 1,
+                          'connect_candidates': 0, 'download_rate': 0, 'upload_rate': 100,
+                          'trackers': [], 'peers': []}],
+            'session': {'enable_dht': True, 'enable_lsd': True,
+                        'allow_multiple_connections_per_ip': True,
+                        'local_service_announce_interval': 10},
+        }
+        resp = await self.client.get('/@/api/debug')
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertIn('torrents', data)
+        self.assertIn('session', data)
+        self.assertEqual(data['torrents'][0]['identifier'], 'x.abc12')
+        self.assertTrue(data['session']['enable_dht'])
+
     async def test_dashboard_site_link(self) -> None:
         self.session.sites_info.return_value = [{
             'identifier': 'mysite.abc12',

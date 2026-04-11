@@ -153,6 +153,7 @@ class HttpServer:
         app.router.add_post('/@/api/reset/{identifier}', self._handle_api_reset)
         app.router.add_post('/@/api/delete/{identifier}', self._handle_api_delete)
         app.router.add_post('/@/api/stop', self._handle_api_stop)
+        app.router.add_get('/@/api/debug', self._handle_api_debug)
         app.router.add_get('/@/config', self._handle_config)
         app.router.add_post('/@/config', self._handle_config_post)
         app.router.add_static('/@/static', path=_STATIC_DIR)
@@ -351,6 +352,9 @@ class HttpServer:
         if self._on_stop is not None:
             self._on_stop()
         return web.json_response({'ok': True})
+
+    async def _handle_api_debug(self, request: web.Request) -> web.Response:
+        return web.json_response(self._session.debug_info())
 
     # ---------------------------------------------------------- site serving
 

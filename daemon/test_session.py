@@ -1476,6 +1476,183 @@ class TestStats(unittest.TestCase):
         self.assertEqual(stats['download_rate'], 0)
 
 
+class TestDebugInfo(unittest.TestCase):
+
+    def _torrent_path(self, tmp: str, npub: str = 'npub1abcde',
+                      site: str = 'mysite', ver: int = 1) -> str:
+        path = os.path.join(tmp, npub, site, str(ver), 'site.torrent')
+        os.makedirs(os.path.dirname(path))
+        return path
+
+    def _make_handle(self, state_str: str = 'torrent_status.states.seeding',
+                     errc_value: int = 0, errc_raises: bool = False,
+                     trackers: list | None = None,
+                     peers: list | None = None) -> MagicMock:
+        handle = MagicMock()
+        handle.is_valid.return_value = True
+        s = MagicMock()
+        mock_state = MagicMock()
+        mock_state.__str__ = MagicMock(return_value=state_str)
+        s.state = mock_state
+        s.progress = 0.5
+        s.num_peers = 1
+        s.num_seeds = 0
+        s.connect_candidates = 3
+        s.download_rate = 100
+        s.upload_rate = 200
+        if errc_raises:
+            s.errc.value.side_effect = AttributeError('no errc')
+            s.error = 'some error'
+        else:
+            s.errc.value.return_value = errc_value
+            s.errc.message.return_value = 'disk full' if errc_value else ''
+        handle.status.return_value = s
+        handle.trackers.return_value = trackers or []
+        handle.get_peer_info.return_value = peers or []
+        return handle
+
+    def test_returns_error_when_session_not_running(self) -> None:
+        """debug_info returns an error dict when the session has been shut down."""
+        session = TorrentSession()
+        session._session = None  # simulate post-shutdown state
+        result = session.debug_info()
+        self.assertEqual(result['error'], 'session not running')
+        self.assertEqual(result['torrents'], [])
+
+    def test_skips_invalid_handles(self) -> None:
+        """Invalid handles are excluded from the torrent list."""
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            tp = self._torrent_path(tmp)
+            handle = MagicMock()
+            handle.is_valid.return_value = False
+            session._handles[tp] = handle
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        self.assertEqual(result['torrents'], [])
+
+    def test_returns_torrent_fields(self) -> None:
+        """Torrent entry contains expected fields with correct values."""
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            tp = self._torrent_path(tmp, ver=3)
+            session._handles[tp] = self._make_handle()
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        self.assertEqual(len(result['torrents']), 1)
+        t = result['torrents'][0]
+        self.assertEqual(t['version'], 3)
+        self.assertEqual(t['state'], 'seeding')
+        self.assertEqual(t['error'], '')
+        self.assertEqual(t['num_peers'], 1)
+        self.assertEqual(t['connect_candidates'], 3)
+
+    def test_error_string_from_errc(self) -> None:
+        """Non-zero errc.value() causes the error message to be included."""
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            tp = self._torrent_path(tmp)
+            session._handles[tp] = self._make_handle(errc_value=28)
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        self.assertEqual(result['torrents'][0]['error'], 'disk full')
+
+    def test_error_string_falls_back_when_errc_raises(self) -> None:
+        """If errc raises, the fallback reads s.error instead."""
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            tp = self._torrent_path(tmp)
+            session._handles[tp] = self._make_handle(errc_raises=True)
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        self.assertEqual(result['torrents'][0]['error'], 'some error')
+
+    def test_tracker_fields_and_endpoints(self) -> None:
+        """Tracker entries include url, tier, fails, and endpoint messages."""
+        ep = MagicMock()
+        ep.message = 'connection timed out'
+        ep.last_announce = 'yesterday'
+        ep.next_announce = 'tomorrow'
+        tr = MagicMock()
+        tr.url = 'udp://tracker.example.com:1234/announce'
+        tr.tier = 0
+        tr.fails = 2
+        tr.verified = False
+        tr.updating = False
+        tr.endpoints = [ep]
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            tp = self._torrent_path(tmp)
+            session._handles[tp] = self._make_handle(trackers=[tr])
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        tracker = result['torrents'][0]['trackers'][0]
+        self.assertEqual(tracker['url'], 'udp://tracker.example.com:1234/announce')
+        self.assertEqual(tracker['fails'], 2)
+        self.assertEqual(tracker['endpoints'][0]['message'], 'connection timed out')
+
+    def test_peer_source_flags_decoded(self) -> None:
+        """Peer source bitmask is decoded to a list of source name strings."""
+        peer = MagicMock()
+        peer.ip = ('192.168.1.1', 6881)
+        peer.source = 0x8 | 0x2   # lsd + dht
+        peer.progress = 0.75
+        peer.payload_down_speed = 512
+        peer.payload_up_speed = 256
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            tp = self._torrent_path(tmp)
+            session._handles[tp] = self._make_handle(peers=[peer])
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        p = result['torrents'][0]['peers'][0]
+        self.assertEqual(p['ip'], '192.168.1.1:6881')
+        self.assertIn('lsd', p['source'])
+        self.assertIn('dht', p['source'])
+        self.assertNotIn('tracker', p['source'])
+        self.assertEqual(p['down_speed'], 512)
+
+    def test_session_settings_included(self) -> None:
+        """Session settings block reflects what get_settings() returns."""
+        session = TorrentSession()
+        session._handles = {}
+        session._session = MagicMock()
+        session._session.get_settings.return_value = {
+            'allow_multiple_connections_per_ip': True,
+            'enable_dht': True,
+            'enable_lsd': True,
+            'local_service_announce_interval': 10,
+        }
+        result = session.debug_info()
+        self.assertTrue(result['session']['allow_multiple_connections_per_ip'])
+        self.assertEqual(result['session']['local_service_announce_interval'], 10)
+
+    def test_sorted_by_identifier_then_version(self) -> None:
+        """Torrents are returned sorted by (identifier, version)."""
+        session = TorrentSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = [
+                self._torrent_path(tmp, site='z_site', ver=2),
+                self._torrent_path(tmp, site='z_site', ver=1),
+                self._torrent_path(tmp, site='a_site', ver=1),
+            ]
+            for p in paths:
+                session._handles[p] = self._make_handle()
+            session._session = MagicMock()
+            session._session.get_settings.return_value = {}
+            result = session.debug_info()
+        identifiers = [(t['identifier'], t['version']) for t in result['torrents']]
+        self.assertEqual(identifiers[0][0], 'a_site.abcde')
+        self.assertEqual(identifiers[1], (identifiers[2][0], 1))
+        self.assertEqual(identifiers[2][1], 2)
+
+
 class TestHandleResumeAlert(unittest.TestCase):
 
     def _make_pending(self, tmp: str) -> tuple[dict, MagicMock]:
